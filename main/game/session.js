@@ -62,6 +62,8 @@ export function createGameSession() {
   let running = false;
   let world;
   let sunAngle = 0;
+  let lookYaw = 0;
+  let lookPitch = 0;
 
   const player = {
     longitude: 0,
@@ -76,19 +78,37 @@ export function createGameSession() {
   }
 
   function updatePhysics() {
-    const left = ACTIVE_KEYS.has("a") || ACTIVE_KEYS.has("arrowleft");
-    const right = ACTIVE_KEYS.has("d") || ACTIVE_KEYS.has("arrowright");
     const forward = ACTIVE_KEYS.has("w") || ACTIVE_KEYS.has("arrowup");
     const backward = ACTIVE_KEYS.has("s") || ACTIVE_KEYS.has("arrowdown");
+    const right = ACTIVE_KEYS.has("a");
+    const left = ACTIVE_KEYS.has("d");
     const jumpOrUp = ACTIVE_KEYS.has(" ") || ACTIVE_KEYS.has("space");
     const down = ACTIVE_KEYS.has("shift") || ACTIVE_KEYS.has("control");
 
     const moveSpeed = 0.02;
-    if (left) player.longitude -= moveSpeed;
-    if (right) player.longitude += moveSpeed;
-    if (forward) player.latitude += moveSpeed * 0.7;
-    if (backward) player.latitude -= moveSpeed * 0.7;
 
+    let moveLong = 0;
+    let moveLat = 0;
+
+    if (forward) {
+      moveLong += Math.sin(lookYaw);
+      moveLat += Math.cos(lookYaw);
+    }
+    if (backward) {
+      moveLong -= Math.sin(lookYaw);
+      moveLat -= Math.cos(lookYaw);
+    }
+    if (right) {
+      moveLong += Math.cos(lookYaw);
+      moveLat -= Math.sin(lookYaw);
+    }
+    if (left) {
+      moveLong -= Math.cos(lookYaw);
+      moveLat += Math.sin(lookYaw);
+    }
+
+    player.longitude += moveLong * moveSpeed;
+    player.latitude += moveLat * moveSpeed * 0.7;
     player.latitude = clamp(player.latitude, -1.3, 1.3);
 
     if (world.mode === "creative") {
@@ -168,8 +188,8 @@ export function createGameSession() {
           z: Math.cos(lat) * Math.sin(lon),
         };
 
-        p = rotateY(p, -player.longitude);
-        p = rotateX(p, -player.latitude);
+        p = rotateY(p, -(player.longitude + lookYaw));
+        p = rotateX(p, -(player.latitude + lookPitch * 0.55));
 
         if (p.z < 0) continue;
 
@@ -208,9 +228,9 @@ export function createGameSession() {
     ctx.arc(playerX, playerY, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | WASD move on sphere | ${
+    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | W forward / S back / A right / D left | Mouse look | ${
       world.mode === "creative" ? "Space/Shift fly" : "Space jump"
-    } | Sun orbiting`;
+    }`;
   }
 
   function tick() {
@@ -228,6 +248,17 @@ export function createGameSession() {
     ACTIVE_KEYS.delete(event.key.toLowerCase());
   }
 
+  function onMouseMove(event) {
+    if (document.pointerLockElement !== canvas) return;
+    lookYaw += event.movementX * 0.003;
+    lookPitch = clamp(lookPitch - event.movementY * 0.002, -0.9, 0.9);
+  }
+
+  canvas.addEventListener("click", () => {
+    canvas.requestPointerLock?.();
+  });
+
+  window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("resize", resizeCanvas);
@@ -236,6 +267,7 @@ export function createGameSession() {
     if (!running) return;
     running = false;
     cancelAnimationFrame(animationFrame);
+    document.exitPointerLock?.();
     sessionRoot.classList.add("hidden");
   });
 
@@ -248,6 +280,8 @@ export function createGameSession() {
       player.latitude = 0;
       player.radialOffset = 0;
       player.jumpVelocity = 0;
+      lookYaw = 0;
+      lookPitch = 0;
       sunAngle = 0;
       sessionRoot.classList.remove("hidden");
 
