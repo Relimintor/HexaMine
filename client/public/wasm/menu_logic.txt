@@ -1,3 +1,0 @@
-# Rename this file to `menu_logic.wasm` before running the client.
-# It contains the WebAssembly module bytes as base64.
-AGFzbQEAAAABBQFgAAF/AwIBAAcSAQ5nZXRNZW51VmVyc2lvbgAACgYBBABBAQs=

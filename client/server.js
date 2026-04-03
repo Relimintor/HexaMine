@@ -1,6 +1,5 @@
 const express = require("express");
 const http = require("http");
-const path = require("path");
 const WebSocket = require("ws");
 
 const app = express();
@@ -9,7 +8,8 @@ const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static(path.join(__dirname, "public")));
+// Optional: serve a simple static page (for testing)
+// app.use(express.static("public"));
 
 let players = [];
 
@@ -18,6 +18,7 @@ wss.on("connection", (ws) => {
   players.push(ws);
 
   ws.on("message", (msg) => {
+    // Broadcast incoming message to all other players
     players.forEach((p) => {
       if (p !== ws && p.readyState === WebSocket.OPEN) {
         p.send(msg.toString());
