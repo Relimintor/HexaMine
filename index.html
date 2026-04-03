@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HexaMine</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="menu-shell" aria-live="polite">
+      <header class="menu-header">
+        <h1 id="title-fallback">HexaMine</h1>
+        <p class="menu-version" id="menu-version"></p>
+      </header>
+
+      <section class="menu-panel" aria-label="Main menu">
+        <button type="button" data-action="new-world">New World</button>
+        <button type="button" data-action="load-world">Load World</button>
+        <button type="button" data-action="multiplayer">Multiplayer</button>
+        <button type="button" data-action="options">Options</button>
+        <button type="button" data-action="quit">Quit</button>
+      </section>
+
+      <section class="status-panel" aria-label="Status">
+        <h2>Status</h2>
+        <p id="status-line">Loading HexaMine systems...</p>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
