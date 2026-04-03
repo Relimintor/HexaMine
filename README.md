@@ -14,3 +14,5 @@ Hexagonal Topology: Because it uses hexagons mapped to a sphere, the game relies
 Dynamic Data Storage: Blocks are stored and processed using Unity's Job system and Burst compiler to handle the high volume of unique positional data required for a spherical planet. (the problem is wer not using unity, so we have to come up with something else
 # quick note 2
 the world isnt getting to a circle like you might think, but the world is looped, and based on our vision the world is seen through a fish eye, wich makes it look like a sphere. mining straight down wont take you to the other side but just come to a red unbreakable block called core, because its quite littarly the planets core
+# folder and file notes
+client/ is for the server list, and for the only official server (aka the const socket = new WebSocket("wss://hexamine.onrender.com"); ) i described the server list earlier, Important note, the main file should NOT be there
