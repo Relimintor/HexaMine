@@ -1,4 +1,4 @@
-export const HEXAMINE_VERSION = "v0.1.0-prealpha";
+export const HEXAMINE_VERSION = "DEMO 0.0.4a36";
 
 const ACTION_LABELS = {
   "new-world": "New World",
