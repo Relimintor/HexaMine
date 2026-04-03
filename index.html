@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HexaMine</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="landing" aria-live="polite">
+      <div class="space-background" aria-hidden="true"></div>
+      <div class="planet" aria-hidden="true"></div>
+
+      <header class="hero">
+        <h1 id="title-fallback">HEXAMINE</h1>
+      </header>
+
+      <nav class="menu-list" aria-label="Main menu">
+        <button type="button" data-action="new-world">New World</button>
+        <button type="button" data-action="load-world">Load World</button>
+        <button type="button" data-action="multiplayer">MultiPlayer</button>
+        <button type="button" data-action="options">Options</button>
+        <button type="button" data-action="quit">Quit</button>
+      </nav>
+
+      <a
+        class="discord-button"
+        href="https://discord.gg/ymfybc9ePu"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Join Our Discord
+      </a>
+
+      <p class="menu-version" id="menu-version"></p>
+      <p id="status-line" class="visually-hidden">Loading HexaMine systems...</p>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
