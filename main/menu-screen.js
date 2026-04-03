@@ -3,7 +3,7 @@ export const HEXAMINE_VERSION = "v0.1.0-prealpha";
 const ACTION_LABELS = {
   "new-world": "New World",
   "load-world": "Load World",
-  multiplayer: "Multiplayer",
+  multiplayer: "MultiPlayer",
   options: "Options",
   quit: "Quit",
 };

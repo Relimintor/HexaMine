@@ -31,7 +31,8 @@ body {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 1.5rem;
-  padding: 2rem 1rem;
+  padding: 2rem 1rem 5rem;
+  position: relative;
 }
 
 .menu-header {
@@ -94,4 +95,24 @@ body {
 
 #status-line {
   margin: 0;
+}
+
+.discord-button {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: #5865f2;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.discord-button:hover {
+  filter: brightness(1.08);
 }

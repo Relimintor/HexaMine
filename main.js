@@ -7,10 +7,20 @@ function formatServerSummary() {
   return names.join(", ");
 }
 
+function tryQuitTab() {
+  window.close();
+
+  setTimeout(() => {
+    if (!document.hidden) {
+      window.location.replace("about:blank");
+    }
+  }, 120);
+}
+
 function handleMenuAction(action, actionLabel) {
   if (action === "quit") {
-    setStatus("Quit selected. Browser security may block window close in some tabs.");
-    window.close();
+    setStatus("Quit selected. Closing tab, or falling back to a blank page.");
+    tryQuitTab();
     return;
   }
 
