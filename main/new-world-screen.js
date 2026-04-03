@@ -24,6 +24,7 @@ export function setupNewWorldScreen({ onCreate, onBack }) {
 
   const worldNameNode = overlay.querySelector("#world-name");
   const seedNode = overlay.querySelector("#world-seed");
+  const feedbackNode = overlay.querySelector("#create-feedback");
   const previewNode = overlay.querySelector("#new-world-preview");
 
   const formState = {
@@ -62,15 +63,18 @@ export function setupNewWorldScreen({ onCreate, onBack }) {
 
   backButton.addEventListener("click", () => {
     overlay.classList.add("hidden");
+    feedbackNode.textContent = "";
     onBack();
   });
 
   createButton.addEventListener("click", () => {
-    onCreate({
+    const message = onCreate({
       worldName: worldNameNode.value || "NewWorld",
       seed: seedNode.value,
       ...formState,
     });
+
+    feedbackNode.textContent = message || "World created.";
   });
 
   refresh();
@@ -78,10 +82,12 @@ export function setupNewWorldScreen({ onCreate, onBack }) {
   return {
     open() {
       overlay.classList.remove("hidden");
+      feedbackNode.textContent = "";
       refresh();
     },
     close() {
       overlay.classList.add("hidden");
+      feedbackNode.textContent = "";
     },
   };
 }

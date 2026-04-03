@@ -1,13 +1,38 @@
 import { getServerList } from "./client/server-list.js";
 import { mountMainMenu, setStatus } from "./main/menu-screen.js";
+import { connectOfficialWorld, isMultiplayerConnected } from "./main/multiplayer/session.js";
 import { setupNewWorldScreen } from "./main/new-world-screen.js";
 import { loadWasmRuntime } from "./main/wasm-runtime.js";
 import { buildIcosphereTopology, mapSizeToSubdivision } from "./main/world/icosphere-topology.js";
-import { saveWorld } from "./main/world/world-storage.js";
+import { getWorlds, saveWorld } from "./main/world/world-storage.js";
 
 function formatServerSummary() {
   const names = getServerList().map((server) => server.name);
   return names.join(", ");
+}
+
+function renderWorldList() {
+  const worldListNode = document.querySelector("#world-list");
+  if (!worldListNode) return;
+
+  const worlds = getWorlds();
+  worldListNode.innerHTML = "";
+
+  if (worlds.length === 0) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "No worlds yet. Create one from New World.";
+    worldListNode.appendChild(emptyItem);
+    return;
+  }
+
+  worlds
+    .slice()
+    .reverse()
+    .forEach((world) => {
+      const item = document.createElement("li");
+      item.textContent = `${world.worldName} — ${world.mode}, ${world.size}, ${world.terrain}`;
+      worldListNode.appendChild(item);
+    });
 }
 
 function tryQuitTab() {
@@ -34,6 +59,19 @@ function createMenuHandlers(newWorldScreen) {
       return;
     }
 
+    if (action === "multiplayer") {
+      connectOfficialWorld({
+        onStatus: setStatus,
+      });
+      return;
+    }
+
+    if (action === "load-world") {
+      renderWorldList();
+      setStatus("Saved worlds refreshed in the Saved Worlds panel.");
+      return;
+    }
+
     setStatus(`${actionLabel} selected. System wiring in progress.`);
   };
 }
@@ -56,20 +94,23 @@ async function boot() {
     onCreate(config) {
       const world = createWorldFromConfig(config);
       saveWorld(world);
-
-      setStatus(
-        `World saved: ${world.worldName}. Cells ${world.topology.totalCells} (${world.topology.hexagonCells} hex + ${world.topology.pentagonCells} pent).`,
-      );
+      renderWorldList();
       newWorldScreen.close();
+
+      const createdMessage = `World created: ${world.worldName} with ${world.topology.hexagonCells} hex cells and ${world.topology.pentagonCells} pent cells.`;
+      setStatus(createdMessage);
+      return createdMessage;
     },
   });
 
+  renderWorldList();
   mountMainMenu({ onAction: createMenuHandlers(newWorldScreen) });
   setStatus("Main menu online. Loading WebAssembly runtime...");
 
   try {
     await loadWasmRuntime();
-    setStatus(`Runtime ready. Available servers: ${formatServerSummary()}`);
+    const multiplayerState = isMultiplayerConnected() ? "connected" : "idle";
+    setStatus(`Runtime ready. Servers: ${formatServerSummary()}. Multiplayer ${multiplayerState}.`);
   } catch (error) {
     setStatus(`Runtime failed to load, fallback mode active: ${error.message}`);
   }

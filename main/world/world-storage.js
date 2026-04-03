@@ -1,6 +1,6 @@
 const WORLD_STORAGE_KEY = "hexamine-worlds";
 
-function readWorlds() {
+export function getWorlds() {
   const raw = localStorage.getItem(WORLD_STORAGE_KEY);
   if (!raw) return [];
 
@@ -17,7 +17,7 @@ function writeWorlds(worlds) {
 }
 
 export function saveWorld(worldConfig) {
-  const worlds = readWorlds();
+  const worlds = getWorlds();
   const worldRecord = {
     id: `world-${Date.now()}`,
     createdAt: new Date().toISOString(),

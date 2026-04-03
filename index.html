@@ -34,6 +34,11 @@
 
       <p class="menu-version" id="menu-version"></p>
       <p id="status-line" class="visually-hidden">Loading HexaMine systems...</p>
+
+      <section class="worlds-panel" aria-label="Saved worlds">
+        <h2>Saved Worlds</h2>
+        <ul id="world-list"></ul>
+      </section>
     </main>
 
     <section id="new-world-overlay" class="new-world-overlay hidden" aria-label="New world setup">
@@ -67,6 +72,7 @@
           </div>
 
           <button type="button" class="create-button" data-new-world="create">Create</button>
+          <p id="create-feedback" class="create-feedback"></p>
         </aside>
 
         <div class="new-world-preview-wrap">

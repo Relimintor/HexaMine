@@ -286,3 +286,39 @@ button.active {
   white-space: nowrap;
   border: 0;
 }
+
+.worlds-panel {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.4rem;
+  min-width: 260px;
+  max-width: 380px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0.75rem 0.9rem;
+  background: rgba(7, 12, 26, 0.78);
+  border: 1px solid rgba(146, 168, 228, 0.4);
+  border-radius: 10px;
+}
+
+.worlds-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+#world-list {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+#world-list li {
+  margin: 0.25rem 0;
+  font-size: 0.86rem;
+}
+
+.create-feedback {
+  margin: 0;
+  min-height: 1.2rem;
+  font-size: 0.9rem;
+  color: #a8f0b4;
+}
