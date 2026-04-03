@@ -1,0 +1,118 @@
+:root {
+  color-scheme: dark;
+  --bg-start: #070b17;
+  --bg-end: #0d1a36;
+  --panel: rgba(15, 24, 45, 0.85);
+  --line: rgba(110, 180, 255, 0.35);
+  --text: #f1f6ff;
+  --muted: #b6c8e6;
+  --button: #17305d;
+  --button-hover: #22417b;
+  --button-active: #2c4f92;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at 20% 20%, #1b3472 0%, transparent 42%),
+    linear-gradient(180deg, var(--bg-start), var(--bg-end));
+}
+
+.menu-shell {
+  max-width: 900px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1.5rem;
+  padding: 2rem 1rem 5rem;
+  position: relative;
+}
+
+.menu-header {
+  text-align: center;
+}
+
+#title-fallback {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 4rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.menu-version {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.menu-panel {
+  width: min(380px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.menu-panel button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.8rem;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--button);
+  cursor: pointer;
+}
+
+.menu-panel button:hover {
+  background: var(--button-hover);
+}
+
+.menu-panel button:active {
+  background: var(--button-active);
+}
+
+.status-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.status-panel h2 {
+  margin-top: 0;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+#status-line {
+  margin: 0;
+}
+
+.discord-button {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: #5865f2;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.discord-button:hover {
+  filter: brightness(1.08);
+}
