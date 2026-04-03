@@ -36,6 +36,45 @@
       <p id="status-line" class="visually-hidden">Loading HexaMine systems...</p>
     </main>
 
+    <section id="new-world-overlay" class="new-world-overlay hidden" aria-label="New world setup">
+      <div class="new-world-layout">
+        <aside class="new-world-panel">
+          <button type="button" class="back-button" data-new-world="back">←</button>
+
+          <div class="mode-group" data-group="mode">
+            <button type="button" data-value="creative">Creative</button>
+            <button type="button" data-value="survival" class="active">Survival</button>
+          </div>
+
+          <label class="field-label" for="world-name">World Name</label>
+          <input id="world-name" type="text" value="NewWorld" />
+
+          <label class="field-label" for="world-seed">Seed</label>
+          <input id="world-seed" type="text" placeholder="Random" />
+
+          <h3>Planet Size</h3>
+          <div class="option-row" data-group="size">
+            <button type="button" data-value="tiny">Tiny</button>
+            <button type="button" data-value="medium">Medium</button>
+            <button type="button" data-value="large" class="active">Large</button>
+            <button type="button" data-value="colossal">Colossal</button>
+          </div>
+
+          <h3>Terrain</h3>
+          <div class="option-row" data-group="terrain">
+            <button type="button" data-value="earthlike" class="active">Earthlike</button>
+            <button type="button" data-value="superflat">Superflat</button>
+          </div>
+
+          <button type="button" class="create-button" data-new-world="create">Create</button>
+        </aside>
+
+        <div class="new-world-preview-wrap">
+          <div id="new-world-preview" class="new-world-preview" data-mode="survival" data-size="large" data-terrain="earthlike"></div>
+        </div>
+      </div>
+    </section>
+
     <script type="module" src="./main.js"></script>
   </body>
 </html>
