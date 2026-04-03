@@ -1,4 +1,5 @@
 import { getServerList } from "./client/server-list.js";
+import { createGameSession } from "./main/game/session.js";
 import { mountMainMenu, setStatus } from "./main/menu-screen.js";
 import { connectOfficialWorld, isMultiplayerConnected } from "./main/multiplayer/session.js";
 import { setupNewWorldScreen } from "./main/new-world-screen.js";
@@ -87,6 +88,8 @@ function createWorldFromConfig(config) {
 }
 
 async function boot() {
+  const gameSession = createGameSession();
+
   const newWorldScreen = setupNewWorldScreen({
     onBack() {
       setStatus("Returned to main menu.");
@@ -96,8 +99,9 @@ async function boot() {
       saveWorld(world);
       renderWorldList();
       newWorldScreen.close();
+      gameSession.start(world);
 
-      const createdMessage = `World created: ${world.worldName} with ${world.topology.hexagonCells} hex cells and ${world.topology.pentagonCells} pent cells.`;
+      const createdMessage = `Spawned in ${world.worldName}: sphere world (${world.topology.hexagonCells} hex + ${world.topology.pentagonCells} pent).`;
       setStatus(createdMessage);
       return createdMessage;
     },

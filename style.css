@@ -322,3 +322,45 @@ button.active {
   font-size: 0.9rem;
   color: #a8f0b4;
 }
+
+.game-session {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: #02040a;
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.game-hud {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  top: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+#game-info {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(130, 162, 247, 0.45);
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+#leave-world {
+  border: 1px solid rgba(208, 226, 255, 0.5);
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+}
