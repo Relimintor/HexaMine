@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HexaMine</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="landing" aria-live="polite">
+      <div class="space-background" aria-hidden="true"></div>
+      <div class="planet" aria-hidden="true"></div>
+
+      <header class="hero">
+        <h1 id="title-fallback">HEXAMINE</h1>
+      </header>
+
+      <nav class="menu-list" aria-label="Main menu">
+        <button type="button" data-action="new-world">New World</button>
+        <button type="button" data-action="load-world">Load World</button>
+        <button type="button" data-action="multiplayer">MultiPlayer</button>
+        <button type="button" data-action="options">Options</button>
+        <button type="button" data-action="quit">Quit</button>
+      </nav>
+
+      <a
+        class="discord-button"
+        href="https://discord.gg/ymfybc9ePu"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Join Our Discord
+      </a>
+
+      <p class="menu-version" id="menu-version"></p>
+      <p id="status-line" class="visually-hidden">Loading HexaMine systems...</p>
+
+      <section class="worlds-panel" aria-label="Saved worlds">
+        <h2>Saved Worlds</h2>
+        <ul id="world-list"></ul>
+      </section>
+    </main>
+
+
+    <section id="game-session" class="game-session hidden" aria-label="In world session">
+      <canvas id="game-canvas"></canvas>
+      <div class="game-hud">
+        <p id="game-info">Spawning...</p>
+        <button type="button" id="leave-world">Leave World</button>
+      </div>
+    </section>
+
+    <section id="new-world-overlay" class="new-world-overlay hidden" aria-label="New world setup">
+      <div class="new-world-layout">
+        <aside class="new-world-panel">
+          <button type="button" class="back-button" data-new-world="back">←</button>
+
+          <div class="mode-group" data-group="mode">
+            <button type="button" data-value="creative">Creative</button>
+            <button type="button" data-value="survival" class="active">Survival</button>
+          </div>
+
+          <label class="field-label" for="world-name">World Name</label>
+          <input id="world-name" type="text" value="NewWorld" />
+
+          <label class="field-label" for="world-seed">Seed</label>
+          <input id="world-seed" type="text" placeholder="Random" />
+
+          <h3>Planet Size</h3>
+          <div class="option-row" data-group="size">
+            <button type="button" data-value="tiny">Tiny</button>
+            <button type="button" data-value="medium">Medium</button>
+            <button type="button" data-value="large" class="active">Large</button>
+            <button type="button" data-value="colossal">Colossal</button>
+          </div>
+
+          <h3>Terrain</h3>
+          <div class="option-row" data-group="terrain">
+            <button type="button" data-value="earthlike" class="active">Earthlike</button>
+            <button type="button" data-value="superflat">Superflat</button>
+          </div>
+
+          <button type="button" class="create-button" data-new-world="create">Create</button>
+          <p id="create-feedback" class="create-feedback"></p>
+        </aside>
+
+        <div class="new-world-preview-wrap">
+          <div id="new-world-preview" class="new-world-preview" data-mode="survival" data-size="large" data-terrain="earthlike"></div>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
