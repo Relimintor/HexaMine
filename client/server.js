@@ -1,6 +1,6 @@
 const express = require("express");
-const WebSocket = require("ws");
 const http = require("http");
+const WebSocket = require("ws");
 
 const app = express();
 const server = http.createServer(app);
@@ -8,8 +8,8 @@ const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
 
-// Serve your game client
-app.use(express.static("public"));
+// Optional: serve a simple static page (for testing)
+// app.use(express.static("public"));
 
 let players = [];
 
@@ -18,8 +18,8 @@ wss.on("connection", (ws) => {
   players.push(ws);
 
   ws.on("message", (msg) => {
-    // Broadcast to all other players
-    players.forEach(p => {
+    // Broadcast incoming message to all other players
+    players.forEach((p) => {
       if (p !== ws && p.readyState === WebSocket.OPEN) {
         p.send(msg.toString());
       }
@@ -27,9 +27,9 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    players = players.filter(p => p !== ws);
+    players = players.filter((p) => p !== ws);
     console.log("Player disconnected");
   });
 });
 
-server.listen(PORT, () => console.log("Server running on port", PORT));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
