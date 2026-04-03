@@ -8,3 +8,7 @@ when clicking new world, a screen will come up where you can choose btw creative
 
 ## MultiPlayer
 this is important, because if i dont get this to work in the beginning it will be a pain in the ass to fix later, it will have one multiplayer world, with by clicking MultiPlayer will plop up, together with a server list, why a serve list? at the side you wll see the option of "hosting a server", by clicking that you can make your own server wich will click up in the server list, THO you need to connect it to a own server to get it to work, here is mine render: const socket = new WebSocket("wss://hexamine.onrender.com");
+## quick notes
+the "blocks" is hexagons, but its uses a sector & shell indexing, the word is divided into 6 sectors like faces of a cube and multiple concentric shells
+Hexagonal Topology: Because it uses hexagons mapped to a sphere, the game relies on spherical coordinates and custom raycasting rather than a standard 3D grid with numeric IDs.
+Dynamic Data Storage: Blocks are stored and processed using Unity's Job system and Burst compiler to handle the high volume of unique positional data required for a spherical planet. (the problem is wer not using unity, so we have to come up with something else
