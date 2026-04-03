@@ -9,6 +9,15 @@ struct AxialCoord {
   int r;
 };
 
+struct PlanetTopology {
+  uint32_t subdivision_level;
+  uint32_t frequency;
+  uint32_t triangle_faces;
+  uint32_t total_cells;
+  uint32_t pentagon_cells;
+  uint32_t hexagon_cells;
+};
+
 static constexpr std::array<AxialCoord, 6> kNeighbors = {
     AxialCoord{1, 0}, AxialCoord{1, -1}, AxialCoord{0, -1},
     AxialCoord{-1, 0}, AxialCoord{-1, 1}, AxialCoord{0, 1},
@@ -28,6 +37,23 @@ bool IsNeighbor(const AxialCoord& center, const AxialCoord& other) {
     }
   }
   return false;
+}
+
+PlanetTopology BuildIcosahedralHexSphere(uint32_t subdivision_level) {
+  const uint32_t frequency = 1u << subdivision_level;
+  const uint32_t triangle_faces = 20u * frequency * frequency;
+  const uint32_t total_cells = 10u * frequency * frequency + 2u;
+  const uint32_t pentagon_cells = 12u;
+  const uint32_t hexagon_cells = total_cells > pentagon_cells ? total_cells - pentagon_cells : 0u;
+
+  return PlanetTopology{
+      subdivision_level,
+      frequency,
+      triangle_faces,
+      total_cells,
+      pentagon_cells,
+      hexagon_cells,
+  };
 }
 
 }  // namespace hexamine::block

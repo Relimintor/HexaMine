@@ -2,6 +2,8 @@ import { getServerList } from "./client/server-list.js";
 import { mountMainMenu, setStatus } from "./main/menu-screen.js";
 import { setupNewWorldScreen } from "./main/new-world-screen.js";
 import { loadWasmRuntime } from "./main/wasm-runtime.js";
+import { buildIcosphereTopology, mapSizeToSubdivision } from "./main/world/icosphere-topology.js";
+import { saveWorld } from "./main/world/world-storage.js";
 
 function formatServerSummary() {
   const names = getServerList().map((server) => server.name);
@@ -36,15 +38,29 @@ function createMenuHandlers(newWorldScreen) {
   };
 }
 
+function createWorldFromConfig(config) {
+  const subdivisionLevel = mapSizeToSubdivision(config.size);
+  const topology = buildIcosphereTopology(subdivisionLevel);
+
+  return {
+    ...config,
+    topology,
+  };
+}
+
 async function boot() {
   const newWorldScreen = setupNewWorldScreen({
     onBack() {
       setStatus("Returned to main menu.");
     },
     onCreate(config) {
+      const world = createWorldFromConfig(config);
+      saveWorld(world);
+
       setStatus(
-        `Create selected: ${config.worldName} (${config.mode}, ${config.size}, ${config.terrain})`,
+        `World saved: ${world.worldName}. Cells ${world.topology.totalCells} (${world.topology.hexagonCells} hex + ${world.topology.pentagonCells} pent).`,
       );
+      newWorldScreen.close();
     },
   });
 
