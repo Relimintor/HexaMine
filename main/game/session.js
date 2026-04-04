@@ -72,15 +72,14 @@ function cellDensityFromSize(size) {
   }
 }
 
+function tileScaleFromCellCount(totalCells) {
+  const areaPerCell = (4 * Math.PI) / Math.max(1, totalCells);
+  const radius = Math.sqrt(areaPerCell / (3 * Math.sqrt(3)));
+  return clamp(radius, 0.03, 0.11);
+}
+
 function buildPlanetCells(topology, size) {
   const total = Math.max(topology?.totalCells || 0, cellDensityFromSize(size));
-  const pentCount = 12;
-  const pentagonIndices = new Set();
-
-  for (let i = 0; i < pentCount; i += 1) {
-    pentagonIndices.add(Math.floor((i / pentCount) * total));
-  }
-
   const golden = (1 + Math.sqrt(5)) / 2;
   const cells = [];
   for (let i = 0; i < total; i += 1) {
@@ -94,8 +93,49 @@ function buildPlanetCells(topology, size) {
         y,
         z: Math.sin(theta) * radius,
       },
-      isPentagon: pentagonIndices.has(i),
+      isPentagon: false,
     });
+  }
+
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const icoSeeds = [
+    { x: -1, y: phi, z: 0 },
+    { x: 1, y: phi, z: 0 },
+    { x: -1, y: -phi, z: 0 },
+    { x: 1, y: -phi, z: 0 },
+    { x: 0, y: -1, z: phi },
+    { x: 0, y: 1, z: phi },
+    { x: 0, y: -1, z: -phi },
+    { x: 0, y: 1, z: -phi },
+    { x: phi, y: 0, z: -1 },
+    { x: phi, y: 0, z: 1 },
+    { x: -phi, y: 0, z: -1 },
+    { x: -phi, y: 0, z: 1 },
+  ].map(normalize);
+
+  const used = new Set();
+  for (const seed of icoSeeds) {
+    let bestIndex = -1;
+    let bestDot = -Infinity;
+    for (let i = 0; i < cells.length; i += 1) {
+      if (used.has(i)) continue;
+      const d = dot(seed, cells[i].normal);
+      if (d > bestDot) {
+        bestDot = d;
+        bestIndex = i;
+      }
+    }
+    if (bestIndex >= 0) {
+      used.add(bestIndex);
+      cells[bestIndex].isPentagon = true;
+    }
+  }
+
+  const tileRadius = tileScaleFromCellCount(total);
+  const tileHeight = clamp(tileRadius * 0.55, 0.014, 0.05);
+  for (const cell of cells) {
+    cell.tileRadius = cell.isPentagon ? tileRadius * 1.06 : tileRadius;
+    cell.tileHeight = cell.isPentagon ? tileHeight * 1.15 : tileHeight;
   }
 
   return cells;
@@ -136,6 +176,7 @@ export function createGameSession() {
   let sunAngle = 0;
   let lookYaw = 0;
   let lookPitch = 0;
+  let cameraZoom = 0;
 
   const player = {
     longitude: 0,
@@ -205,9 +246,9 @@ export function createGameSession() {
 
   function drawSky(width, height, sunX, sunY) {
     const bg = ctx.createLinearGradient(0, 0, 0, height);
-    bg.addColorStop(0, "#92b8ea");
-    bg.addColorStop(0.55, "#9fc2ef");
-    bg.addColorStop(1, "#d8ecff");
+    bg.addColorStop(0, "#85ade3");
+    bg.addColorStop(0.55, "#a8cbf4");
+    bg.addColorStop(1, "#e9f5ff");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
@@ -240,8 +281,8 @@ export function createGameSession() {
     const east = normalize(cross({ x: 0, y: 1, z: 0 }, cell.normal));
     const north = normalize(cross(cell.normal, east));
     const sideCount = cell.isPentagon ? 5 : 6;
-    const tileRadius = cell.isPentagon ? 0.054 : 0.05;
-    const heightOffset = cell.isPentagon ? 0.068 : 0.058;
+    const tileRadius = cell.tileRadius;
+    const heightOffset = cell.tileHeight;
 
     const topCenter = {
       x: baseCenter.x + cell.normal.x * heightOffset,
@@ -278,15 +319,15 @@ export function createGameSession() {
     if (projectedTop.some((p) => !p) || projectedBottom.some((p) => !p)) return;
 
     const brightness = clamp((dot(cell.normal, sunVector) + 1) * 0.5, 0.16, 1);
-    const sideTint = cell.isPentagon ? [152, 124, 88] : [131, 105, 74];
-    const topTint = cell.isPentagon ? [76, 188, 92] : [70, 176, 84];
+    const sideTint = cell.isPentagon ? [142, 112, 76] : [124, 96, 68];
+    const topTint = cell.isPentagon ? [84, 188, 96] : [74, 176, 86];
 
     const shadowCenter = projectPoint(baseCenter, camera, w, h, focal);
     if (shadowCenter) {
-      const shadowSize = Math.max(8, 120 / (shadowCenter.z + 0.3));
-      const shadowOffsetX = 12;
-      const shadowOffsetY = 8;
-      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      const shadowSize = Math.max(4, 90 / (shadowCenter.z + 0.6));
+      const shadowOffsetX = 5;
+      const shadowOffsetY = 4;
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
       drawPolygon(ctx, shadowCenter.x + shadowOffsetX, shadowCenter.y + shadowOffsetY, shadowSize, sideCount);
       ctx.fill();
     }
@@ -323,7 +364,7 @@ export function createGameSession() {
   function drawWorld() {
     const w = canvas.width;
     const h = canvas.height;
-    const horizon = h * 0.58;
+    const horizon = h * 0.59;
     const sunVector = {
       x: Math.cos(sunAngle),
       y: 0.25,
@@ -335,8 +376,8 @@ export function createGameSession() {
     drawSky(w, h, sunX, sunY);
 
     const groundGradient = ctx.createLinearGradient(0, horizon - h * 0.05, 0, h);
-    groundGradient.addColorStop(0, "rgba(109,204,114,0.9)");
-    groundGradient.addColorStop(1, "rgba(56,168,70,1)");
+    groundGradient.addColorStop(0, "rgba(136,198,132,0.28)");
+    groundGradient.addColorStop(1, "rgba(93,164,102,0.08)");
     ctx.fillStyle = groundGradient;
     ctx.beginPath();
     ctx.rect(0, horizon, w, h - horizon);
@@ -365,11 +406,12 @@ export function createGameSession() {
     const cameraUp = normalize(cross(cameraRight, cameraForward));
 
     const eyeHeight = 0.03 + player.radialOffset * 0.05;
+    const viewDistance = eyeHeight + cameraZoom;
     const camera = {
       position: {
-        x: playerNormal.x * (1 + eyeHeight),
-        y: playerNormal.y * (1 + eyeHeight),
-        z: playerNormal.z * (1 + eyeHeight),
+        x: playerNormal.x * (1 + viewDistance),
+        y: playerNormal.y * (1 + viewDistance),
+        z: playerNormal.z * (1 + viewDistance),
       },
       forward: cameraForward,
       right: cameraRight,
@@ -385,7 +427,8 @@ export function createGameSession() {
       };
       const depth = dot(toCell, camera.forward);
       if (depth <= 0.12) continue;
-      if (dot(cell.normal, playerNormal) < 0.1) continue;
+      const globeVisibilityCutoff = cameraZoom > 0.7 ? -0.35 : 0.06;
+      if (dot(cell.normal, playerNormal) < globeVisibilityCutoff) continue;
       drawQueue.push({ cell, depth });
     }
 
@@ -429,11 +472,17 @@ export function createGameSession() {
     lookPitch = clamp(lookPitch - event.movementY * 0.002, -0.9, 0.9);
   }
 
+  function onWheel(event) {
+    cameraZoom = clamp(cameraZoom + event.deltaY * 0.0015, 0, 2.4);
+    event.preventDefault();
+  }
+
   canvas.addEventListener("click", () => {
     canvas.requestPointerLock?.();
   });
 
   window.addEventListener("mousemove", onMouseMove);
+  window.addEventListener("wheel", onWheel, { passive: false });
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("resize", resizeCanvas);
@@ -458,6 +507,7 @@ export function createGameSession() {
       player.jumpVelocity = 0;
       lookYaw = 0;
       lookPitch = 0;
+      cameraZoom = 0;
       sunAngle = 0;
       sessionRoot.classList.remove("hidden");
 
