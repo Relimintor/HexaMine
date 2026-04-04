@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HEXAMINE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="screen" id="menu-screen">
+      <div class="space-stars" aria-hidden="true"></div>
+      <div class="planet-wrapper" aria-hidden="true">
+        <div class="planet-glow"></div>
+        <div class="planet"></div>
+      </div>
+
+      <h1 class="title">HEXAMINE</h1>
+
+      <nav class="menu" aria-label="Main menu">
+        <button type="button" id="new-world-btn">New World</button>
+        <button type="button">Load World</button>
+        <button type="button">Options</button>
+        <button type="button">Quit</button>
+      </nav>
+
+      <footer>
+        <a class="discord-link" href="https://github.com" target="_blank" rel="noopener noreferrer">
+          <span class="discord-icon" aria-hidden="true">💬</span>
+          <span>Join Our Discord</span>
+        </a>
+        <p class="version">DEMO 0.0.1</p>
+      </footer>
+    </main>
+
+    <section class="create-world-screen hidden" id="create-world-screen" aria-label="Create world">
+      <div class="space-stars" aria-hidden="true"></div>
+      <div class="planet-wrapper planet-wrapper-shifted" aria-hidden="true">
+        <div class="planet-glow"></div>
+        <div class="planet planet-bright"></div>
+      </div>
+
+      <div class="create-panel">
+        <button class="back-btn" id="back-btn" type="button" aria-label="Back to menu">←</button>
+
+        <div class="mode-tabs">
+          <button type="button" class="mode-btn">Creative</button>
+          <button type="button" class="mode-btn active">Survival</button>
+        </div>
+
+        <label class="field-group">
+          <span>World Name</span>
+          <input id="world-name" type="text" value="New World" />
+        </label>
+
+        <label class="field-group">
+          <span>Seed</span>
+          <input id="world-seed" type="text" placeholder="Random" />
+        </label>
+
+        <div class="selector-group">
+          <p>Planet Size</p>
+          <div class="hex-options" id="size-options">
+            <button type="button" class="hex-chip">Tiny</button>
+            <button type="button" class="hex-chip">Medium</button>
+            <button type="button" class="hex-chip active">Large</button>
+            <button type="button" class="hex-chip">Colossal</button>
+          </div>
+        </div>
+
+        <div class="selector-group">
+          <p>Terrain</p>
+          <div class="hex-options" id="terrain-options">
+            <button type="button" class="hex-chip active">Earthlike</button>
+            <button type="button" class="hex-chip">Superflat</button>
+          </div>
+        </div>
+
+        <button class="create-btn" id="create-btn" type="button">Create</button>
+        <p id="spawn-note" class="spawn-note" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <script src="ui.js"></script>
+  </body>
+</html>
