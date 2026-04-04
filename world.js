@@ -204,6 +204,131 @@ function raycastSurfaceAlongGravity(position, gravityDir, center, targetRadius, 
   };
 }
 
+function worldToVoxelIndex(position, voxelSize) {
+  return [
+    Math.floor(position[0] / voxelSize),
+    Math.floor(position[1] / voxelSize),
+    Math.floor(position[2] / voxelSize),
+  ];
+}
+
+function voxelKey(i, j, k) {
+  return `${i},${j},${k}`;
+}
+
+function voxelCenterFromIndex(i, j, k, voxelSize) {
+  return [
+    (i + 0.5) * voxelSize,
+    (j + 0.5) * voxelSize,
+    (k + 0.5) * voxelSize,
+  ];
+}
+
+function pseudoNoise3(v) {
+  const n = Math.sin((v[0] * 12.9898) + (v[1] * 78.233) + (v[2] * 37.719)) * 43758.5453;
+  const frac = n - Math.floor(n);
+  return (frac * 2) - 1;
+}
+
+function sampleBaseDensity(position, settingsPhysics) {
+  const rel = vecSub(position, settingsPhysics.planetCenter);
+  const terrain = settingsPhysics.terrainAmplitude
+    * pseudoNoise3(vecScale(rel, settingsPhysics.terrainFrequency));
+  return settingsPhysics.planetRadius - vecLength(rel) + terrain;
+}
+
+function getVoxelDensity(i, j, k, state, settingsPhysics) {
+  const key = voxelKey(i, j, k);
+  const center = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
+  const baseDensity = sampleBaseDensity(center, settingsPhysics);
+  const modifiedDelta = state.modifiedDensity.get(key) || 0;
+  return baseDensity + modifiedDelta;
+}
+
+function isSolidAtWorld(position, state, settingsPhysics) {
+  const [i, j, k] = worldToVoxelIndex(position, settingsPhysics.voxelSize);
+  return getVoxelDensity(i, j, k, state, settingsPhysics) > 0;
+}
+
+function markDirtyChunkForVoxel(i, j, k, state, settingsPhysics) {
+  const chunkSize = settingsPhysics.chunkSize;
+  const cx = Math.floor(i / chunkSize);
+  const cy = Math.floor(j / chunkSize);
+  const cz = Math.floor(k / chunkSize);
+  state.dirtyChunks.add(voxelKey(cx, cy, cz));
+}
+
+function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics) {
+  const s = settingsPhysics.voxelSize;
+  const minIndex = worldToVoxelIndex(vecSub(center, [radius, radius, radius]), s);
+  const maxIndex = worldToVoxelIndex(vecAdd(center, [radius, radius, radius]), s);
+
+  for (let i = minIndex[0]; i <= maxIndex[0]; i += 1) {
+    for (let j = minIndex[1]; j <= maxIndex[1]; j += 1) {
+      for (let k = minIndex[2]; k <= maxIndex[2]; k += 1) {
+        const voxelCenter = voxelCenterFromIndex(i, j, k, s);
+        const distance = vecLength(vecSub(voxelCenter, center));
+        if (distance > radius) continue;
+        const falloff = 1 - (distance / radius);
+        const delta = strengthSign * settingsPhysics.editStrength * falloff;
+        const key = voxelKey(i, j, k);
+        state.modifiedDensity.set(key, (state.modifiedDensity.get(key) || 0) + delta);
+        markDirtyChunkForVoxel(i, j, k, state, settingsPhysics);
+      }
+    }
+  }
+}
+
+function raycastDensityField(origin, direction, maxDistance, state, settingsPhysics) {
+  const s = settingsPhysics.voxelSize;
+  const dir = vecNormalize(direction);
+  let [ix, iy, iz] = worldToVoxelIndex(origin, s);
+  const stepX = dir[0] >= 0 ? 1 : -1;
+  const stepY = dir[1] >= 0 ? 1 : -1;
+  const stepZ = dir[2] >= 0 ? 1 : -1;
+
+  const nextBoundaryX = (ix + (stepX > 0 ? 1 : 0)) * s;
+  const nextBoundaryY = (iy + (stepY > 0 ? 1 : 0)) * s;
+  const nextBoundaryZ = (iz + (stepZ > 0 ? 1 : 0)) * s;
+
+  let tMaxX = dir[0] !== 0 ? (nextBoundaryX - origin[0]) / dir[0] : Infinity;
+  let tMaxY = dir[1] !== 0 ? (nextBoundaryY - origin[1]) / dir[1] : Infinity;
+  let tMaxZ = dir[2] !== 0 ? (nextBoundaryZ - origin[2]) / dir[2] : Infinity;
+  const tDeltaX = dir[0] !== 0 ? s / Math.abs(dir[0]) : Infinity;
+  const tDeltaY = dir[1] !== 0 ? s / Math.abs(dir[1]) : Infinity;
+  const tDeltaZ = dir[2] !== 0 ? s / Math.abs(dir[2]) : Infinity;
+
+  let t = 0;
+  let hitNormal = [0, 0, 0];
+  while (t <= maxDistance) {
+    if (getVoxelDensity(ix, iy, iz, state, settingsPhysics) > 0) {
+      return {
+        position: vecAdd(origin, vecScale(dir, t)),
+        voxel: [ix, iy, iz],
+        normal: hitNormal,
+      };
+    }
+
+    if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+      ix += stepX;
+      t = tMaxX;
+      tMaxX += tDeltaX;
+      hitNormal = [-stepX, 0, 0];
+    } else if (tMaxY < tMaxZ) {
+      iy += stepY;
+      t = tMaxY;
+      tMaxY += tDeltaY;
+      hitNormal = [0, -stepY, 0];
+    } else {
+      iz += stepZ;
+      t = tMaxZ;
+      tMaxZ += tDeltaZ;
+      hitNormal = [0, 0, -stepZ];
+    }
+  }
+  return null;
+}
+
 function triangleCircumcenter(a, b, c, radius) {
   const u = vecSub(b, a);
   const v = vecSub(c, a);
@@ -714,6 +839,8 @@ function bootWorld() {
       onGround: false,
       rotation: [1, 0, 0, 0],
     },
+    modifiedDensity: new Map(),
+    dirtyChunks: new Set(),
   };
   renderHotbar(state.selectedSlot);
 
@@ -723,6 +850,15 @@ function bootWorld() {
     hexHeight: 0.0444444444,
     playerHeightHexes: 1.8,
     groundProbeDistance: 0.12,
+    voxelSize: 0.04,
+    chunkSize: 16,
+    terrainAmplitude: 0.06,
+    terrainFrequency: 3.8,
+    editBrushRadius: 0.08,
+    editStrength: 0.32,
+    editReach: 3.5,
+    placeOffsetScale: 0.5,
+    playerCollisionRadius: 0.06,
     gravity: 3.6,
     moveAccel: 6.2,
     jumpSpeed: 1.2,
@@ -786,13 +922,17 @@ function bootWorld() {
     }
   });
 
+  canvas.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
+
   document.addEventListener("pointerlockchange", () => {
     if (!isLocked() && !state.paused) {
       state.paused = true;
       pauseSidebar.classList.add("open");
     }
     hud.textContent = isLocked()
-      ? "Pointer locked • FPS movement + dynamic gravity frame • Space jump • Mouse look"
+      ? "Pointer locked • WASD move • Space jump • Mouse look • LMB mine • RMB place"
       : "Click to lock cursor • FPS movement + dynamic gravity frame";
   });
 
@@ -801,6 +941,48 @@ function bootWorld() {
     const sensitivity = 0.0025;
     state.turnDelta -= event.movementX * sensitivity;
     state.pitchDelta -= event.movementY * sensitivity;
+  });
+
+  function handleMineOrPlace(button) {
+    const basis = buildCameraBasis(
+      state.player.position,
+      state.moveForward,
+      settingsPhysics.planetCenter,
+    );
+    const cameraPosition = vecAdd(state.player.position, vecScale(basis.up, 0.02));
+    const hit = raycastDensityField(
+      cameraPosition,
+      basis.forward,
+      settingsPhysics.editReach,
+      state,
+      settingsPhysics,
+    );
+    if (!hit) return;
+    const hitPosition = hit.position;
+    const hitNormal = vecLength(hit.normal) > 0.0001
+      ? vecNormalize(hit.normal)
+      : vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
+
+    if (button === 0) {
+      modifyDensitySphere(hitPosition, settingsPhysics.editBrushRadius, -1, state, settingsPhysics);
+    }
+
+    if (button === 2) {
+      const placePosition = vecAdd(
+        hitPosition,
+        vecScale(hitNormal, settingsPhysics.placeOffsetScale * settingsPhysics.voxelSize),
+      );
+      const playerDistance = vecLength(vecSub(placePosition, state.player.position));
+      if (playerDistance <= settingsPhysics.playerCollisionRadius) return;
+      modifyDensitySphere(placePosition, settingsPhysics.editBrushRadius, 1, state, settingsPhysics);
+    }
+  }
+
+  document.addEventListener("mousedown", (event) => {
+    if (!isLocked()) return;
+    if (event.button !== 0 && event.button !== 2) return;
+    event.preventDefault();
+    handleMineOrPlace(event.button);
   });
 
   function updatePlayer(dt) {
@@ -938,7 +1120,9 @@ function bootWorld() {
       up: basis.cameraUp,
     };
 
-    const polygons = worldModel.topology.tiles.map((tile) => {
+    const polygons = worldModel.topology.tiles
+      .filter((tile) => isSolidAtWorld(tile.center, state, settingsPhysics))
+      .map((tile) => {
       const topCorners = tile.corners;
       const bottomCorners = tile.corners.map((corner) => vecScale(corner, 0.93));
       const projected = topCorners
@@ -949,14 +1133,14 @@ function bootWorld() {
       }
       const zAverage = projected.reduce((sum, p) => sum + p.z, 0) / projected.length;
 
-      return {
-        tile,
-        projected,
-        topCorners,
-        bottomCorners,
-        zAverage,
-      };
-    }).filter(Boolean);
+        return {
+          tile,
+          projected,
+          topCorners,
+          bottomCorners,
+          zAverage,
+        };
+      }).filter(Boolean);
 
     polygons
       .sort((a, b) => b.zAverage - a.zAverage)
@@ -980,7 +1164,7 @@ function bootWorld() {
           ctx.lineTo(b2.x, b2.y);
           ctx.lineTo(b1.x, b1.y);
           ctx.closePath();
-          ctx.fillStyle = `rgba(106, 74, 45, ${sideShade})`;
+          ctx.fillStyle = `rgb(${Math.round(106 * sideShade)}, ${Math.round(74 * sideShade)}, ${Math.round(45 * sideShade)})`;
           ctx.fill();
         }
 
@@ -996,8 +1180,8 @@ function bootWorld() {
         ctx.closePath();
 
         ctx.fillStyle = polygon.tile.isPentagon
-          ? `rgba(136, 183, 78, ${topShade})`
-          : `rgba(112, 199, 106, ${topShade})`;
+          ? `rgb(${Math.round(136 * topShade)}, ${Math.round(183 * topShade)}, ${Math.round(78 * topShade)})`
+          : `rgb(${Math.round(112 * topShade)}, ${Math.round(199 * topShade)}, ${Math.round(106 * topShade)})`;
 
         ctx.fill();
         ctx.strokeStyle = "rgba(32, 54, 33, 0.55)";
