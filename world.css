@@ -72,6 +72,7 @@ h1 {
   display: grid;
   place-items: center;
   padding: 1rem;
+  position: relative;
 }
 
 #world-canvas {
@@ -79,6 +80,19 @@ h1 {
   height: min(95vh, 95vw);
   max-width: 100%;
   max-height: calc(100vh - 2rem);
+}
+
+.hud {
+  position: absolute;
+  top: 1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #4e607f;
+  background: #0d1627cc;
+  border-radius: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
 @media (max-width: 980px) {

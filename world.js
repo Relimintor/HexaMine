@@ -31,6 +31,42 @@ function getHexConfig() {
   return fallback;
 }
 
+const CUBE_NEIGHBOR_DIRECTIONS = [
+  { q: 1, r: -1, s: 0 },
+  { q: 1, r: 0, s: -1 },
+  { q: 0, r: 1, s: -1 },
+  { q: -1, r: 1, s: 0 },
+  { q: -1, r: 0, s: 1 },
+  { q: 0, r: -1, s: 1 },
+];
+
+function cubeRound(q, r, s) {
+  let rq = Math.round(q);
+  let rr = Math.round(r);
+  let rs = Math.round(s);
+
+  const qDiff = Math.abs(rq - q);
+  const rDiff = Math.abs(rr - r);
+  const sDiff = Math.abs(rs - s);
+
+  if (qDiff > rDiff && qDiff > sDiff) {
+    rq = -rr - rs;
+  } else if (rDiff > sDiff) {
+    rr = -rq - rs;
+  } else {
+    rs = -rq - rr;
+  }
+
+  return { q: rq, r: rr, s: rs };
+}
+
+function sphereToCube(center, resolution) {
+  const q = center[0] * resolution;
+  const r = center[2] * resolution;
+  const s = -q - r;
+  return cubeRound(q, r, s);
+}
+
 function vecScale(v, s) {
   return [v[0] * s, v[1] * s, v[2] * s];
 }
@@ -152,6 +188,7 @@ function subdivideMesh(mesh, subdivisions) {
 
 function buildDualTiles(mesh, radius) {
   const hexConfig = getHexConfig();
+  const cubeResolution = Math.max(6, Math.floor(Math.sqrt(mesh.vertices.length) / 2));
   const cityTileIds = new Set((hexConfig.blocks[hexConfig.hexTypes.CITY] || []).map((block) => block.id));
   const normalizedVertices = mesh.vertices.map((v) => vecScale(vecNormalize(v), radius));
   const faceCenters = mesh.faces.map(([a, b, c]) => {
@@ -200,48 +237,141 @@ function buildDualTiles(mesh, radius) {
     const isPentagon = neighbors.length === 5;
     const type = isPentagon ? hexConfig.hexTypes.PENTAGON : hexConfig.hexTypes.REGULAR;
     const feature = cityTileIds.has(vertexIndex) ? "city" : null;
+    const baseBiome = hexConfig.terrain.defaultBiome;
+    const cube = sphereToCube(center, cubeResolution);
 
     return {
       id: vertexIndex,
       center,
+      normal,
+      tangent,
+      bitangent,
+      cube,
       corners,
       neighbors,
+      cubeNeighborDirections: CUBE_NEIGHBOR_DIRECTIONS,
       type,
       isPentagon,
-      biome: hexConfig.terrain.defaultBiome,
+      biome: baseBiome,
       elevation: 0,
       feature,
       hiddenLayers: {
+        biomeLayer: {
+          tileID: vertexIndex,
+          type: baseBiome,
+        },
+        terrainMesh: {
+          tileID: vertexIndex,
+          height: 0,
+          roughness: 0,
+        },
         subTerrain: [],
-        fluid: [...hexConfig.terrain.fluidTypes],
-        resources: [...hexConfig.terrain.resourceTypes],
+        fluid: [],
+        resources: [],
+      },
+      chunk: {
+        voxels: [],
+      },
+      addSubTerrain(layer) {
+        this.hiddenLayers.subTerrain.push({ tileID: this.id, ...layer });
+      },
+      addFluid(layer) {
+        this.hiddenLayers.fluid.push({ tileID: this.id, ...layer });
+      },
+      addResource(layer) {
+        this.hiddenLayers.resources.push({ tileID: this.id, ...layer });
       },
     };
+  });
+
+  tiles.forEach((tile) => {
+    hexConfig.terrain.fluidTypes.forEach((fluidType) => {
+      tile.addFluid({ type: fluidType, volume: 0 });
+    });
+    hexConfig.terrain.resourceTypes.forEach((resourceType) => {
+      tile.addResource({ type: resourceType, density: 0 });
+    });
   });
 
   return tiles;
 }
 
-function rotateY(v, angle) {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
+function buildTriangleNodeGraph(mesh, radius) {
+  const normalizedVertices = mesh.vertices.map((v) => vecScale(vecNormalize(v), radius));
+  const nodes = mesh.faces.map(([a, b, c], faceIndex) => {
+    const centroid = vecScale(
+      vecAdd(vecAdd(normalizedVertices[a], normalizedVertices[b]), normalizedVertices[c]),
+      1 / 3,
+    );
+
+    return {
+      id: faceIndex,
+      center: vecScale(vecNormalize(centroid), radius),
+      neighbors: [],
+    };
+  });
+
+  const edgeToFaces = new Map();
+  mesh.faces.forEach(([a, b, c], faceIndex) => {
+    [[a, b], [b, c], [c, a]].forEach(([x, y]) => {
+      const key = x < y ? `${x}_${y}` : `${y}_${x}`;
+      if (!edgeToFaces.has(key)) {
+        edgeToFaces.set(key, []);
+      }
+      edgeToFaces.get(key).push(faceIndex);
+    });
+  });
+
+  edgeToFaces.forEach((linkedFaces) => {
+    if (linkedFaces.length !== 2) {
+      return;
+    }
+    const [f1, f2] = linkedFaces;
+    nodes[f1].neighbors.push(f2);
+    nodes[f2].neighbors.push(f1);
+  });
+
+  return nodes;
 }
 
-function rotateX(v, angle) {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  return [v[0], v[1] * c - v[2] * s, v[1] * s + v[2] * c];
-}
+function buildCameraBasis(position, yaw, pitch) {
+  const up = vecNormalize(position);
+  const worldUp = Math.abs(up[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
+  const surfaceRight = vecNormalize(vecCross(worldUp, up));
+  const surfaceForward = vecNormalize(vecCross(up, surfaceRight));
 
-function project(v, canvas) {
-  const cameraDistance = 3.2;
-  const depth = v[2] + cameraDistance;
-  const scale = 420 / depth;
+  const yawForward = vecNormalize(vecAdd(vecScale(surfaceForward, Math.cos(yaw)), vecScale(surfaceRight, Math.sin(yaw))));
+  const yawRight = vecNormalize(vecCross(yawForward, up));
+  const forward = vecNormalize(vecAdd(vecScale(yawForward, Math.cos(pitch)), vecScale(up, Math.sin(pitch))));
+  const right = vecNormalize(vecCross(forward, up));
+  const cameraUp = vecNormalize(vecCross(right, forward));
+
   return {
-    x: canvas.width * 0.5 + v[0] * scale,
-    y: canvas.height * 0.5 - v[1] * scale,
-    z: v[2],
+    up,
+    surfaceRight,
+    yawForward,
+    yawRight,
+    forward,
+    right,
+    cameraUp,
+  };
+}
+
+function cameraProject(worldPoint, camera, canvas) {
+  const rel = vecSub(worldPoint, camera.position);
+  const x = vecDot(rel, camera.right);
+  const y = vecDot(rel, camera.up);
+  const z = vecDot(rel, camera.forward);
+
+  if (z <= 0.02) {
+    return null;
+  }
+
+  const scale = 550 / z;
+  return {
+    x: canvas.width * 0.5 + x * scale,
+    y: canvas.height * 0.5 - y * scale,
+    z,
   };
 }
 
@@ -296,6 +426,38 @@ function validateTopology(mesh, tiles) {
   };
 }
 
+function buildWorldModel(mesh, tiles) {
+  const triangleNodes = buildTriangleNodeGraph(mesh, 1);
+
+  return {
+    topology: {
+      vertices: mesh.vertices,
+      faces: mesh.faces,
+      triangleNodes,
+      tiles,
+    },
+    geometry: {
+      localFrames: tiles.map((tile) => ({
+        tileID: tile.id,
+        center: tile.center,
+        normal: tile.normal,
+        tangent: tile.tangent,
+        bitangent: tile.bitangent,
+      })),
+    },
+    volumetric: {
+      voxelFields: tiles.map((tile) => ({
+        tileID: tile.id,
+        voxels: tile.chunk.voxels,
+        densityField: [],
+      })),
+    },
+    meshing: {
+      visibleTriangles: mesh.faces,
+    },
+  };
+}
+
 function renderStats(tiles, facesCount, settings, subdivisions, topology) {
   const pentagons = tiles.filter((tile) => tile.isPentagon).length;
   const hexagons = tiles.filter((tile) => tile.neighbors.length === 6).length;
@@ -307,6 +469,7 @@ function renderStats(tiles, facesCount, settings, subdivisions, topology) {
   const stats = [
     `Subdivisions: ${subdivisions}`,
     `Triangles: ${facesCount}`,
+    `Triangle nodes: ${topology.triangleNodeCount}`,
     `Total tiles: ${tiles.length}`,
     `Pentagons: ${pentagons}`,
     `Hexagons: ${hexagons}`,
@@ -334,34 +497,159 @@ function bootWorld() {
   const baseMesh = buildIcosahedron();
   const mesh = subdivideMesh(baseMesh, subdivisions);
   const tiles = buildDualTiles(mesh, 1);
+  const worldModel = buildWorldModel(mesh, tiles);
   const topology = validateTopology(mesh, tiles);
+  topology.triangleNodeCount = worldModel.topology.triangleNodes.length;
 
-  renderStats(tiles, mesh.faces.length, settings, subdivisions, topology);
+  renderStats(worldModel.topology.tiles, worldModel.topology.faces.length, settings, subdivisions, topology);
 
   const canvas = document.getElementById("world-canvas");
   const ctx = canvas.getContext("2d");
+  const hud = document.getElementById("hud");
 
+  const state = {
+    keys: { w: false, a: false, s: false, d: false, space: false },
+    yaw: 0,
+    pitch: 0,
+    player: {
+      position: [0, 1.08, 0],
+      velocity: [0, 0, 0],
+      onGround: false,
+    },
+  };
+
+  const settingsPhysics = {
+    planetRadius: 1,
+    playerHeight: 0.08,
+    gravity: 3.6,
+    moveAccel: 6.2,
+    jumpSpeed: 1.2,
+    damping: 0.9,
+  };
+
+  function isLocked() {
+    return document.pointerLockElement === canvas;
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.code === "KeyW") state.keys.w = true;
+    if (event.code === "KeyA") state.keys.a = true;
+    if (event.code === "KeyS") state.keys.s = true;
+    if (event.code === "KeyD") state.keys.d = true;
+    if (event.code === "Space") {
+      state.keys.space = true;
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener("keyup", (event) => {
+    if (event.code === "KeyW") state.keys.w = false;
+    if (event.code === "KeyA") state.keys.a = false;
+    if (event.code === "KeyS") state.keys.s = false;
+    if (event.code === "KeyD") state.keys.d = false;
+    if (event.code === "Space") state.keys.space = false;
+  });
+
+  canvas.addEventListener("click", () => {
+    if (!isLocked()) {
+      canvas.requestPointerLock();
+    }
+  });
+
+  document.addEventListener("pointerlockchange", () => {
+    hud.textContent = isLocked()
+      ? "Pointer locked • WASD move • Space jump • Mouse look"
+      : "Click to lock cursor • WASD move • Space jump";
+  });
+
+  document.addEventListener("mousemove", (event) => {
+    if (!isLocked()) return;
+    const sensitivity = 0.0025;
+    state.yaw -= event.movementX * sensitivity;
+    state.pitch -= event.movementY * sensitivity;
+    state.pitch = Math.max(-1.35, Math.min(1.35, state.pitch));
+  });
+
+  function updatePlayer(dt) {
+    const basis = buildCameraBasis(state.player.position, state.yaw, 0);
+    let move = [0, 0, 0];
+
+    if (state.keys.w) move = vecAdd(move, basis.yawForward);
+    if (state.keys.s) move = vecSub(move, basis.yawForward);
+    if (state.keys.d) move = vecAdd(move, basis.yawRight);
+    if (state.keys.a) move = vecSub(move, basis.yawRight);
+
+    if (vecLength(move) > 0) {
+      move = vecNormalize(move);
+      state.player.velocity = vecAdd(state.player.velocity, vecScale(move, settingsPhysics.moveAccel * dt));
+    }
+
+    const up = vecNormalize(state.player.position);
+    state.player.velocity = vecAdd(state.player.velocity, vecScale(up, -settingsPhysics.gravity * dt));
+
+    if (state.keys.space && state.player.onGround) {
+      state.player.velocity = vecAdd(state.player.velocity, vecScale(up, settingsPhysics.jumpSpeed));
+      state.player.onGround = false;
+    }
+
+    state.player.position = vecAdd(state.player.position, vecScale(state.player.velocity, dt));
+
+    const distance = vecLength(state.player.position);
+    const targetDistance = settingsPhysics.planetRadius + settingsPhysics.playerHeight;
+    if (distance <= targetDistance) {
+      const correctedUp = vecNormalize(state.player.position);
+      state.player.position = vecScale(correctedUp, targetDistance);
+      const inwardSpeed = vecDot(state.player.velocity, correctedUp);
+      if (inwardSpeed < 0) {
+        state.player.velocity = vecSub(state.player.velocity, vecScale(correctedUp, inwardSpeed));
+      }
+      state.player.onGround = true;
+    } else {
+      state.player.onGround = false;
+    }
+
+    const radial = vecNormalize(state.player.position);
+    const radialComponent = vecScale(radial, vecDot(state.player.velocity, radial));
+    const tangential = vecSub(state.player.velocity, radialComponent);
+    state.player.velocity = vecAdd(radialComponent, vecScale(tangential, settingsPhysics.damping));
+  }
+
+  let previousTime = performance.now();
   function draw(time) {
-    const angle = time * 0.00025;
+    const dt = Math.min(0.033, (time - previousTime) / 1000);
+    previousTime = time;
+    updatePlayer(dt);
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const polygons = tiles.map((tile) => {
-      const rotatedCorners = tile.corners.map((corner) => rotateX(rotateY(corner, angle), -0.35));
-      const projected = rotatedCorners.map((point) => project(point, canvas));
-      const zAverage = rotatedCorners.reduce((sum, p) => sum + p[2], 0) / rotatedCorners.length;
+    const basis = buildCameraBasis(state.player.position, state.yaw, state.pitch);
+    const camera = {
+      position: vecAdd(state.player.position, vecScale(basis.up, 0.02)),
+      forward: basis.forward,
+      right: basis.right,
+      up: basis.cameraUp,
+    };
+
+    const polygons = worldModel.topology.tiles.map((tile) => {
+      const projected = tile.corners
+        .map((corner) => cameraProject(corner, camera, canvas))
+        .filter(Boolean);
+      if (projected.length < 3) {
+        return null;
+      }
+      const zAverage = projected.reduce((sum, p) => sum + p.z, 0) / projected.length;
 
       return {
         tile,
         projected,
         zAverage,
       };
-    });
+    }).filter(Boolean);
 
     polygons
-      .filter((polygon) => polygon.zAverage > -0.65)
-      .sort((a, b) => a.zAverage - b.zAverage)
+      .sort((a, b) => b.zAverage - a.zAverage)
       .forEach((polygon) => {
-        const shade = Math.max(0.2, Math.min(0.95, (polygon.zAverage + 1.2) / 2.3));
+        const shade = Math.max(0.25, Math.min(1, polygon.zAverage / 2.8));
         ctx.beginPath();
         polygon.projected.forEach((point, index) => {
           if (index === 0) {
@@ -383,6 +671,15 @@ function bootWorld() {
         ctx.lineWidth = 1;
         ctx.stroke();
       });
+
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(canvas.width * 0.5 - 7, canvas.height * 0.5);
+    ctx.lineTo(canvas.width * 0.5 + 7, canvas.height * 0.5);
+    ctx.moveTo(canvas.width * 0.5, canvas.height * 0.5 - 7);
+    ctx.lineTo(canvas.width * 0.5, canvas.height * 0.5 + 7);
+    ctx.stroke();
 
     requestAnimationFrame(draw);
   }
