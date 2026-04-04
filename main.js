@@ -78,7 +78,7 @@ function createMenuHandlers(newWorldScreen) {
 }
 
 function createWorldFromConfig(config) {
-  const subdivisionLevel = mapSizeToSubdivision(config.size);
+  const subdivisionLevel = mapSizeToSubdivision(config.size) + 1;
   const topology = buildIcosphereTopology(subdivisionLevel);
 
   return {
