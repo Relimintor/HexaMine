@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HEXAMINE World</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="world.css" />
+  </head>
+  <body>
+    <main class="world-layout">
+      <section class="world-info">
+        <a class="back-link" href="index.html">← Back to menu</a>
+        <h1 id="world-title">HEXAMINE World</h1>
+        <p id="world-settings"></p>
+
+        <ul class="stats" id="world-stats"></ul>
+        <p id="topology-status" class="topology-status"></p>
+
+        <p class="note">
+          Sphere rule enforced: exactly <strong>12 pentagons</strong>, all remaining tiles are hexagons.
+        </p>
+      </section>
+
+      <section class="viewer">
+        <canvas id="world-canvas" width="900" height="900" aria-label="HexaMine planet preview"></canvas>
+        <aside class="minimap-panel">
+          <p>World Miniature</p>
+          <canvas id="minimap-canvas" width="220" height="220" aria-label="Mini world map"></canvas>
+        </aside>
+        <div class="hud" id="hud">
+          Click to lock cursor • FPS movement + dynamic gravity frame
+        </div>
+        <div class="hotbar" id="hotbar" aria-label="Hotbar"></div>
+      </section>
+    </main>
+
+    <script src="hexes/config.js"></script>
+    <script src="world.js"></script>
+  </body>
+</html>
