@@ -163,6 +163,7 @@ function projectPoint(point, camera, width, height, focal) {
 }
 
 export function createGameSession() {
+  const PLAYER_HEIGHT_IN_HEXES = 2;
   const sessionRoot = document.querySelector("#game-session");
   const canvas = document.querySelector("#game-canvas");
   const infoNode = document.querySelector("#game-info");
@@ -177,6 +178,7 @@ export function createGameSession() {
   let lookYaw = 0;
   let lookPitch = 0;
   let cameraZoom = 0;
+  let cameraDetached = false;
 
   const player = {
     longitude: 0,
@@ -193,8 +195,8 @@ export function createGameSession() {
   function updatePhysics() {
     const forward = ACTIVE_KEYS.has("w") || ACTIVE_KEYS.has("arrowup");
     const backward = ACTIVE_KEYS.has("s") || ACTIVE_KEYS.has("arrowdown");
-    const right = ACTIVE_KEYS.has("a");
-    const left = ACTIVE_KEYS.has("d");
+    const left = ACTIVE_KEYS.has("a");
+    const right = ACTIVE_KEYS.has("d");
     const jumpOrUp = ACTIVE_KEYS.has(" ") || ACTIVE_KEYS.has("space");
     const down = ACTIVE_KEYS.has("shift") || ACTIVE_KEYS.has("control");
 
@@ -405,8 +407,10 @@ export function createGameSession() {
     const cameraRight = normalize(cross(cameraForward, worldUp));
     const cameraUp = normalize(cross(cameraRight, cameraForward));
 
-    const eyeHeight = 0.03 + player.radialOffset * 0.05;
-    const viewDistance = eyeHeight + cameraZoom;
+    const baseHexHeight = planetCells.find((cell) => !cell.isPentagon)?.tileHeight || 0.028;
+    const eyeHeight = baseHexHeight * PLAYER_HEIGHT_IN_HEXES + player.radialOffset * 0.05;
+    const detachedBoost = cameraDetached ? 1.35 : 0;
+    const viewDistance = eyeHeight + cameraZoom + detachedBoost;
     const camera = {
       position: {
         x: playerNormal.x * (1 + viewDistance),
@@ -427,7 +431,7 @@ export function createGameSession() {
       };
       const depth = dot(toCell, camera.forward);
       if (depth <= 0.12) continue;
-      const globeVisibilityCutoff = cameraZoom > 0.7 ? -0.35 : 0.06;
+      const globeVisibilityCutoff = cameraZoom > 0.7 || cameraDetached ? -0.35 : 0.06;
       if (dot(cell.normal, playerNormal) < globeVisibilityCutoff) continue;
       drawQueue.push({ cell, depth });
     }
@@ -446,9 +450,11 @@ export function createGameSession() {
     ctx.lineTo(w * 0.5, h * 0.52 + 5);
     ctx.stroke();
 
-    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | First-person | ${world.topology.hexagonCells} hex + ${
-      world.topology.pentagonCells
-    } pent | W/S move, A/D strafe, Mouse look, ${world.mode === "creative" ? "Space/Shift fly" : "Space jump"}`;
+    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | ${cameraDetached ? "Fly-out cam" : "First-person"} | ${
+      world.topology.hexagonCells
+    } hex + ${world.topology.pentagonCells} pent | W/S forward-back, A left, D right, Mouse look, P toggle fly-out, ${
+      world.mode === "creative" ? "Space/Shift fly" : "Space jump"
+    }`;
   }
 
   function tick() {
@@ -459,6 +465,11 @@ export function createGameSession() {
   }
 
   function onKeyDown(event) {
+    if (event.key.toLowerCase() === "p" && !event.repeat) {
+      cameraDetached = !cameraDetached;
+      cameraZoom = cameraDetached ? Math.max(cameraZoom, 0.9) : Math.min(cameraZoom, 0.3);
+      return;
+    }
     ACTIVE_KEYS.add(event.key.toLowerCase());
   }
 
@@ -508,6 +519,7 @@ export function createGameSession() {
       lookYaw = 0;
       lookPitch = 0;
       cameraZoom = 0;
+      cameraDetached = false;
       sunAngle = 0;
       sessionRoot.classList.remove("hidden");
 
