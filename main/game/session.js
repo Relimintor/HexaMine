@@ -57,6 +57,28 @@ function dot(a, b) {
   return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
+function projectOntoPlane(vector, normal) {
+  const projection = dot(vector, normal);
+  return {
+    x: vector.x - normal.x * projection,
+    y: vector.y - normal.y * projection,
+    z: vector.z - normal.z * projection,
+  };
+}
+
+function rotateAroundAxis(vector, axis, angle) {
+  const unitAxis = normalize(axis);
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const axisDot = dot(unitAxis, vector);
+  const axisCrossVector = cross(unitAxis, vector);
+  return {
+    x: vector.x * c + axisCrossVector.x * s + unitAxis.x * axisDot * (1 - c),
+    y: vector.y * c + axisCrossVector.y * s + unitAxis.y * axisDot * (1 - c),
+    z: vector.z * c + axisCrossVector.z * s + unitAxis.z * axisDot * (1 - c),
+  };
+}
+
 function projectToSphere(point, radius = 1) {
   const unit = normalize(point);
   return {
@@ -348,7 +370,10 @@ export function createGameSession() {
   let lookPitch = 0;
   let cameraZoom = 0;
   let cameraDetached = false;
+  let cameraModeIndex = 0;
+  const CAMERA_MODES = ["first-person", "second-person", "third-person"];
   let freeCameraPos = { x: 0, y: 0, z: 1.2 };
+  let groundForward = { x: 0, y: 0, z: 1 };
 
   const player = {
     longitude: 0,
@@ -462,6 +487,82 @@ export function createGameSession() {
     sunAngle += 0.004;
   }
 
+
+  function getPlayerNormal() {
+    return normalize({
+      x: Math.cos(player.latitude) * Math.sin(player.longitude),
+      y: Math.sin(player.latitude),
+      z: Math.cos(player.latitude) * Math.cos(player.longitude),
+    });
+  }
+
+  function drawDistantPlanets(width, height) {
+    const planets = [
+      { x: width * 0.16, y: height * 0.22, radius: Math.max(10, Math.min(width, height) * 0.038), color: "#9fc3ff", glow: "rgba(159,195,255,0.35)" },
+      { x: width * 0.83, y: height * 0.2, radius: Math.max(8, Math.min(width, height) * 0.03), color: "#f7d7a6", glow: "rgba(247,215,166,0.32)" },
+      { x: width * 0.73, y: height * 0.34, radius: Math.max(6, Math.min(width, height) * 0.024), color: "#d5b5ff", glow: "rgba(213,181,255,0.28)" },
+    ];
+
+    for (const body of planets) {
+      const halo = ctx.createRadialGradient(body.x, body.y, body.radius * 0.6, body.x, body.y, body.radius * 3.2);
+      halo.addColorStop(0, body.glow);
+      halo.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(body.x, body.y, body.radius * 3.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = body.color;
+      ctx.beginPath();
+      ctx.arc(body.x, body.y, body.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawPlayerBody(camera, playerNormal) {
+    const bodyHeight = 0.16;
+    const shoulderRadius = 0.036;
+    const bodyBase = {
+      x: playerNormal.x * (PLANET_OUTER_RADIUS + 0.01),
+      y: playerNormal.y * (PLANET_OUTER_RADIUS + 0.01),
+      z: playerNormal.z * (PLANET_OUTER_RADIUS + 0.01),
+    };
+    const bodyTop = {
+      x: playerNormal.x * (PLANET_OUTER_RADIUS + bodyHeight),
+      y: playerNormal.y * (PLANET_OUTER_RADIUS + bodyHeight),
+      z: playerNormal.z * (PLANET_OUTER_RADIUS + bodyHeight),
+    };
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const focal = Math.min(w, h) * 0.82;
+    const bottomScreen = projectPoint(bodyBase, camera, w, h, focal);
+    const topScreen = projectPoint(bodyTop, camera, w, h, focal);
+    if (!bottomScreen || !topScreen) return;
+
+    const bodyWidth = Math.max(3, (90 / (bottomScreen.z + 0.35)) * shoulderRadius);
+    ctx.strokeStyle = "rgba(31, 68, 140, 0.95)";
+    ctx.lineCap = "round";
+    ctx.lineWidth = bodyWidth;
+    ctx.beginPath();
+    ctx.moveTo(bottomScreen.x, bottomScreen.y);
+    ctx.lineTo(topScreen.x, topScreen.y);
+    ctx.stroke();
+
+    const head = {
+      x: playerNormal.x * (PLANET_OUTER_RADIUS + bodyHeight + 0.05),
+      y: playerNormal.y * (PLANET_OUTER_RADIUS + bodyHeight + 0.05),
+      z: playerNormal.z * (PLANET_OUTER_RADIUS + bodyHeight + 0.05),
+    };
+    const headScreen = projectPoint(head, camera, w, h, focal);
+    if (!headScreen) return;
+
+    ctx.fillStyle = "#f0c9a6";
+    ctx.beginPath();
+    ctx.arc(headScreen.x, headScreen.y, Math.max(2.5, 110 / (headScreen.z + 0.9)), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawSky(width, height, sunX, sunY) {
     const bg = ctx.createLinearGradient(0, 0, 0, height);
     bg.addColorStop(0, "#85ade3");
@@ -564,6 +665,11 @@ export function createGameSession() {
   }
 
   function drawWorld() {
+    if (canvas.width === 0 || canvas.height === 0) {
+      resizeCanvas();
+      if (canvas.width === 0 || canvas.height === 0) return;
+    }
+
     const w = canvas.width;
     const h = canvas.height;
     const horizon = h * 0.59;
@@ -576,6 +682,7 @@ export function createGameSession() {
     const sunX = w * 0.5 + Math.cos(sunAngle) * w * 0.25;
     const sunY = h * 0.12 - Math.sin(sunAngle) * h * 0.05;
     drawSky(w, h, sunX, sunY);
+    drawDistantPlanets(w, h);
 
     const groundGradient = ctx.createLinearGradient(0, horizon - h * 0.05, 0, h);
     groundGradient.addColorStop(0, "rgba(136,198,132,0.28)");
@@ -585,11 +692,7 @@ export function createGameSession() {
     ctx.rect(0, horizon, w, h - horizon);
     ctx.fill();
 
-    const playerNormal = normalize({
-      x: Math.cos(player.latitude) * Math.sin(player.longitude),
-      y: Math.sin(player.latitude),
-      z: Math.cos(player.latitude) * Math.cos(player.longitude),
-    });
+    const playerNormal = getPlayerNormal();
 
     let camera;
     if (cameraDetached) {
@@ -617,29 +720,41 @@ export function createGameSession() {
           worldUp = cell.normal;
         }
       }
-      const east = normalize(cross({ x: 0, y: 1, z: 0 }, worldUp));
-      const north = normalize(cross(worldUp, east));
+      const preferredForward = projectOntoPlane(groundForward, worldUp);
+      let baseForward = normalize(preferredForward);
+      if (Math.hypot(preferredForward.x, preferredForward.y, preferredForward.z) < 0.00001) {
+        baseForward = normalize(projectOntoPlane({ x: 0, y: 0, z: 1 }, worldUp));
+        if (Math.hypot(baseForward.x, baseForward.y, baseForward.z) < 0.00001) {
+          baseForward = normalize(projectOntoPlane({ x: 1, y: 0, z: 0 }, worldUp));
+        }
+      }
 
-      let cameraForward = north;
-      cameraForward = rotateY(cameraForward, lookYaw);
-      cameraForward = rotateX(cameraForward, lookPitch * 0.35);
-      cameraForward = normalize({
-        x: cameraForward.x + east.x * Math.sin(lookYaw),
-        y: cameraForward.y + east.y * Math.sin(lookYaw),
-        z: cameraForward.z + east.z * Math.sin(lookYaw),
-      });
+      let cameraForward = rotateAroundAxis(baseForward, worldUp, lookYaw);
+      let cameraRight = normalize(cross(cameraForward, worldUp));
+      cameraForward = normalize(rotateAroundAxis(cameraForward, cameraRight, lookPitch * 0.8));
+      cameraRight = normalize(cross(cameraForward, worldUp));
+      groundForward = normalize(projectOntoPlane(cameraForward, worldUp));
 
-      const cameraRight = normalize(cross(cameraForward, worldUp));
       const cameraUp = normalize(cross(cameraRight, cameraForward));
       const baseHexHeight = planetCells.find((cell) => !cell.isPentagon)?.tileHeight || 0.028;
       const eyeHeight = baseHexHeight * PLAYER_HEIGHT_IN_HEXES + player.radialOffset * 0.05;
-      const viewDistance = eyeHeight + cameraZoom;
+
+      let cameraDistance = eyeHeight + cameraZoom;
+      if (cameraModeIndex === 1) cameraDistance = -0.34;
+      if (cameraModeIndex === 2) cameraDistance = 0.55 + cameraZoom;
+
+      const focusPoint = {
+        x: playerNormal.x * (PLANET_OUTER_RADIUS + eyeHeight),
+        y: playerNormal.y * (PLANET_OUTER_RADIUS + eyeHeight),
+        z: playerNormal.z * (PLANET_OUTER_RADIUS + eyeHeight),
+      };
+      const cameraPosition = {
+        x: focusPoint.x - cameraForward.x * cameraDistance,
+        y: focusPoint.y - cameraForward.y * cameraDistance,
+        z: focusPoint.z - cameraForward.z * cameraDistance,
+      };
       camera = {
-        position: {
-          x: playerNormal.x * (PLANET_OUTER_RADIUS + viewDistance),
-          y: playerNormal.y * (PLANET_OUTER_RADIUS + viewDistance),
-          z: playerNormal.z * (PLANET_OUTER_RADIUS + viewDistance),
-        },
+        position: cameraPosition,
         forward: cameraForward,
         right: cameraRight,
         up: cameraUp,
@@ -665,6 +780,10 @@ export function createGameSession() {
       drawBlockTile(entry.cell, camera, sunVector);
     }
 
+    if (cameraDetached || cameraModeIndex !== 0) {
+      drawPlayerBody(camera, playerNormal);
+    }
+
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
     ctx.lineWidth = 1.2;
     ctx.beginPath();
@@ -674,11 +793,11 @@ export function createGameSession() {
     ctx.lineTo(w * 0.5, h * 0.52 + 5);
     ctx.stroke();
 
-    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | ${cameraDetached ? "Free camera" : "First-person"} | ${
+    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | ${cameraDetached ? "Free camera" : CAMERA_MODES[cameraModeIndex]} | ${
       world.topology.hexagonCells
     } hex + ${world.topology.pentagonCells} pent | Subdiv ${resolveSubdivisionLevel(world.topology)} | Hollow core r=${PLANET_INNER_AIR_RADIUS.toFixed(
       2,
-    )} | W/S/A/D move, Mouse look, Space up, Shift down, P toggle camera`;
+    )} | W/S/A/D move, Mouse look, Space up, Shift down | C cycle view | P free-cam`;
   }
 
   function tick() {
@@ -689,17 +808,17 @@ export function createGameSession() {
   }
 
   function onKeyDown(event) {
+    if (event.key.toLowerCase() === "c" && !event.repeat) {
+      cameraModeIndex = (cameraModeIndex + 1) % CAMERA_MODES.length;
+      return;
+    }
     if (event.key.toLowerCase() === "p" && !event.repeat) {
       cameraDetached = !cameraDetached;
       if (cameraDetached) {
         const baseHexHeight = planetCells.find((cell) => !cell.isPentagon)?.tileHeight || 0.028;
         const eyeHeight = baseHexHeight * PLAYER_HEIGHT_IN_HEXES + player.radialOffset * 0.05;
         const startDistance = PLANET_OUTER_RADIUS + eyeHeight + Math.max(cameraZoom, 0.25);
-        const playerNormal = normalize({
-          x: Math.cos(player.latitude) * Math.sin(player.longitude),
-          y: Math.sin(player.latitude),
-          z: Math.cos(player.latitude) * Math.cos(player.longitude),
-        });
+        const playerNormal = getPlayerNormal();
         freeCameraPos = {
           x: playerNormal.x * startDistance,
           y: playerNormal.y * startDistance,
@@ -760,9 +879,15 @@ export function createGameSession() {
       lookPitch = 0;
       cameraZoom = 0;
       cameraDetached = false;
+      cameraModeIndex = 0;
       freeCameraPos = { x: 0, y: 0, z: 1.2 };
+      groundForward = { x: 0, y: 0, z: 1 };
       sunAngle = 0;
       sessionRoot.classList.remove("hidden");
+      resizeCanvas();
+      requestAnimationFrame(() => {
+        resizeCanvas();
+      });
 
       if (!running) {
         running = true;
