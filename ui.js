@@ -17,6 +17,11 @@ function toggleActiveChip(containerId, event) {
   target.classList.add("active");
 }
 
+function getActiveOption(containerId) {
+  const activeOption = document.querySelector(`#${containerId} .hex-chip.active`);
+  return activeOption ? activeOption.textContent.trim().toLowerCase() : "";
+}
+
 newWorldBtn.addEventListener("click", () => {
   menuScreen.classList.add("hidden");
   createWorldScreen.classList.remove("hidden");
@@ -38,6 +43,20 @@ document.getElementById("terrain-options").addEventListener("click", (event) => 
 
 createBtn.addEventListener("click", () => {
   const worldNameInput = document.getElementById("world-name");
+  const worldSeedInput = document.getElementById("world-seed");
+
   const worldName = worldNameInput.value.trim() || "New World";
-  spawnNote.textContent = `Creating \"${worldName}\"... spawning player on an icosahedron planet.`;
+  const seed = worldSeedInput.value.trim() || "random";
+  const size = getActiveOption("size-options") || "large";
+  const terrain = getActiveOption("terrain-options") || "earthlike";
+
+  const params = new URLSearchParams({
+    name: worldName,
+    seed,
+    size,
+    terrain,
+  });
+
+  spawnNote.textContent = `Creating \"${worldName}\"... opening icosahedron world.`;
+  window.location.href = `world.html?${params.toString()}`;
 });
