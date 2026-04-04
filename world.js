@@ -562,9 +562,20 @@ function bootWorld() {
   const canvas = document.getElementById("world-canvas");
   const ctx = canvas.getContext("2d");
   const hud = document.getElementById("hud");
+  const pauseSidebar = document.getElementById("pause-sidebar");
+  const backGameBtn = document.getElementById("back-game-btn");
+  const exitWebBtn = document.getElementById("exit-web-btn");
+  const exitBtn = document.getElementById("exit-btn");
   const minimapCanvas = document.getElementById("minimap-canvas");
   const minimapCtx = minimapCanvas.getContext("2d");
   const hotbar = document.getElementById("hotbar");
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
 
   function renderHotbar(activeSlot) {
     hotbar.innerHTML = "";
@@ -579,6 +590,7 @@ function bootWorld() {
   const state = {
     keys: { w: false, a: false, s: false, d: false, space: false },
     selectedSlot: 1,
+    paused: false,
     yaw: 0,
     pitch: 0,
     player: {
@@ -602,7 +614,31 @@ function bootWorld() {
     return document.pointerLockElement === canvas;
   }
 
+  function setPaused(paused) {
+    state.paused = paused;
+    pauseSidebar.classList.toggle("open", paused);
+    if (paused) {
+      document.exitPointerLock();
+      hud.textContent = "Paused • Escape to resume";
+    } else {
+      canvas.requestPointerLock();
+    }
+  }
+
+  backGameBtn.addEventListener("click", () => setPaused(false));
+  exitWebBtn.addEventListener("click", () => {
+    window.location.href = "index.html";
+  });
+  exitBtn.addEventListener("click", () => {
+    document.exitPointerLock();
+    hud.textContent = "Exited focus • use Exit to Web or close tab";
+  });
+
   document.addEventListener("keydown", (event) => {
+    if (event.code === "Escape") {
+      setPaused(!state.paused);
+      return;
+    }
     if (event.code === "KeyW") state.keys.w = true;
     if (event.code === "KeyA") state.keys.a = true;
     if (event.code === "KeyS") state.keys.s = true;
@@ -632,6 +668,10 @@ function bootWorld() {
   });
 
   document.addEventListener("pointerlockchange", () => {
+    if (!isLocked() && !state.paused) {
+      state.paused = true;
+      pauseSidebar.classList.add("open");
+    }
     hud.textContent = isLocked()
       ? "Pointer locked • FPS movement + dynamic gravity frame • Space jump • Mouse look"
       : "Click to lock cursor • FPS movement + dynamic gravity frame";
@@ -693,7 +733,9 @@ function bootWorld() {
   function draw(time) {
     const dt = Math.min(0.033, (time - previousTime) / 1000);
     previousTime = time;
-    updatePlayer(dt);
+    if (!state.paused) {
+      updatePlayer(dt);
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
