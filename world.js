@@ -347,21 +347,29 @@ function buildDynamicGravityFrame(position) {
   };
 }
 
-function buildCameraBasis(position, yaw, pitch) {
-  const frame = buildDynamicGravityFrame(position);
-  const { up, surfaceRight, surfaceForward } = frame;
+function rotateAroundAxis(vector, axis, angle) {
+  const k = vecNormalize(axis);
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const term1 = vecScale(vector, cosA);
+  const term2 = vecScale(vecCross(k, vector), sinA);
+  const term3 = vecScale(k, vecDot(k, vector) * (1 - cosA));
+  return vecAdd(vecAdd(term1, term2), term3);
+}
 
-  const yawForward = vecNormalize(vecAdd(vecScale(surfaceForward, Math.cos(yaw)), vecScale(surfaceRight, Math.sin(yaw))));
-  const yawRight = vecNormalize(vecCross(yawForward, up));
-  const forward = vecNormalize(vecAdd(vecScale(yawForward, Math.cos(pitch)), vecScale(up, Math.sin(pitch))));
-  const right = vecNormalize(vecCross(forward, up));
+function buildCameraBasis(position, moveForward, pitch) {
+  const frame = buildDynamicGravityFrame(position);
+  const { up } = frame;
+
+  const forwardFlatRaw = vecSub(moveForward, vecScale(up, vecDot(moveForward, up)));
+  const forwardFlat = vecLength(forwardFlatRaw) > 0.0001 ? vecNormalize(forwardFlatRaw) : frame.surfaceForward;
+  const right = vecNormalize(vecCross(forwardFlat, up));
+  const forward = vecNormalize(vecAdd(vecScale(forwardFlat, Math.cos(pitch)), vecScale(up, Math.sin(pitch))));
   const cameraUp = vecNormalize(vecCross(right, forward));
 
   return {
     up,
-    surfaceRight,
-    yawForward,
-    yawRight,
+    forwardFlat,
     forward,
     right,
     cameraUp,
@@ -592,8 +600,9 @@ function bootWorld() {
     keys: { w: false, a: false, s: false, d: false, space: false },
     selectedSlot: 1,
     paused: false,
-    yaw: 0,
+    turnDelta: 0,
     pitch: 0,
+    moveForward: [1, 0, 0],
     player: {
       position: [0, 1.08, 0],
       velocity: [0, 0, 0],
@@ -681,26 +690,31 @@ function bootWorld() {
   document.addEventListener("mousemove", (event) => {
     if (!isLocked()) return;
     const sensitivity = 0.0025;
-    state.yaw -= event.movementX * sensitivity;
-    state.pitch -= event.movementY * sensitivity;
+    state.turnDelta -= event.movementX * sensitivity;
+    state.pitch += event.movementY * sensitivity;
     state.pitch = Math.max(-1.35, Math.min(1.35, state.pitch));
   });
 
   function updatePlayer(dt) {
-    const basis = buildCameraBasis(state.player.position, state.yaw, 0);
+    const up = vecNormalize(state.player.position);
+    if (Math.abs(state.turnDelta) > 0.00001) {
+      state.moveForward = rotateAroundAxis(state.moveForward, up, state.turnDelta);
+      state.turnDelta = 0;
+    }
+
+    const basis = buildCameraBasis(state.player.position, state.moveForward, 0);
     let move = [0, 0, 0];
 
-    if (state.keys.w) move = vecAdd(move, basis.yawForward);
-    if (state.keys.s) move = vecSub(move, basis.yawForward);
-    if (state.keys.d) move = vecAdd(move, basis.yawRight);
-    if (state.keys.a) move = vecSub(move, basis.yawRight);
+    if (state.keys.w) move = vecAdd(move, basis.forwardFlat);
+    if (state.keys.s) move = vecSub(move, basis.forwardFlat);
+    if (state.keys.d) move = vecAdd(move, basis.right);
+    if (state.keys.a) move = vecSub(move, basis.right);
 
     if (vecLength(move) > 0) {
       move = vecNormalize(move);
       state.player.velocity = vecAdd(state.player.velocity, vecScale(move, settingsPhysics.moveAccel * dt));
     }
 
-    const up = vecNormalize(state.player.position);
     state.player.velocity = vecAdd(state.player.velocity, vecScale(up, -settingsPhysics.gravity * dt));
 
     if (state.keys.space && state.player.onGround) {
@@ -740,7 +754,7 @@ function bootWorld() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const basis = buildCameraBasis(state.player.position, state.yaw, state.pitch);
+    const basis = buildCameraBasis(state.player.position, state.moveForward, state.pitch);
     const camera = {
       position: vecAdd(state.player.position, vecScale(basis.up, 0.02)),
       forward: basis.forward,
