@@ -582,7 +582,8 @@ function bootWorld() {
     for (let slot = 1; slot <= 9; slot += 1) {
       const slotEl = document.createElement("div");
       slotEl.className = `hotbar-slot${activeSlot === slot ? " active" : ""}`;
-      slotEl.textContent = slot;
+      slotEl.textContent = "";
+      slotEl.title = `Slot ${slot}`;
       hotbar.appendChild(slotEl);
     }
   }

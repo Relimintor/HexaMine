@@ -75,10 +75,11 @@ h1 {
 }
 
 #world-canvas {
-  width: min(95vh, 95vw);
-  height: min(95vh, 95vw);
-  max-width: 100%;
-  max-height: calc(100vh - 2rem);
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  display: block;
 }
 
 .hud {
@@ -121,26 +122,30 @@ h1 {
 .hotbar {
   position: absolute;
   left: 50%;
-  bottom: 1rem;
+  bottom: 0.8rem;
   transform: translateX(-50%);
   display: grid;
-  grid-template-columns: repeat(9, minmax(34px, 48px));
-  gap: 0.35rem;
+  grid-template-columns: repeat(9, minmax(42px, 62px));
+  gap: 0.45rem;
 }
 
 .hotbar-slot {
-  aspect-ratio: 1;
-  border: 2px solid #6e7685;
-  background: #1a1f2acc;
+  aspect-ratio: 1 / 0.92;
+  border: 2px solid #5a6a86;
+  background: linear-gradient(180deg, #162132d9, #0b1322d9);
   display: grid;
-  place-items: center;
-  font-size: 0.72rem;
+  place-items: end center;
+  padding-bottom: 0.15rem;
+  font-size: 0.6rem;
   font-weight: 700;
+  color: #b9c6dd;
+  clip-path: polygon(25% 2%, 75% 2%, 98% 50%, 75% 98%, 25% 98%, 2% 50%);
 }
 
 .hotbar-slot.active {
   border-color: #f2c261;
-  box-shadow: 0 0 9px #f2c26166;
+  box-shadow: 0 0 12px #f2c2618a;
+  color: #f5cf7b;
 }
 
 .pause-sidebar {
