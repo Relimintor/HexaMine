@@ -691,7 +691,7 @@ function bootWorld() {
     if (!isLocked()) return;
     const sensitivity = 0.0025;
     state.turnDelta -= event.movementX * sensitivity;
-    state.pitch += event.movementY * sensitivity;
+    state.pitch -= event.movementY * sensitivity;
     state.pitch = Math.max(-1.35, Math.min(1.35, state.pitch));
   });
 
@@ -722,7 +722,13 @@ function bootWorld() {
       state.player.onGround = false;
     }
 
-    state.player.position = vecAdd(state.player.position, vecScale(state.player.velocity, dt));
+    const previousPosition = state.player.position;
+    let nextPosition = vecAdd(state.player.position, vecScale(state.player.velocity, dt));
+    if (vecDot(previousPosition, nextPosition) < 0) {
+      nextPosition = previousPosition;
+      state.player.velocity = [0, 0, 0];
+    }
+    state.player.position = nextPosition;
 
     const distance = vecLength(state.player.position);
     const targetDistance = settingsPhysics.planetRadius + settingsPhysics.playerHeight;
@@ -742,6 +748,11 @@ function bootWorld() {
     const radialComponent = vecScale(radial, vecDot(state.player.velocity, radial));
     const tangential = vecSub(state.player.velocity, radialComponent);
     state.player.velocity = vecAdd(radialComponent, vecScale(tangential, settingsPhysics.damping));
+
+    const forwardProjected = vecSub(state.moveForward, vecScale(radial, vecDot(state.moveForward, radial)));
+    if (vecLength(forwardProjected) > 0.0001) {
+      state.moveForward = vecNormalize(forwardProjected);
+    }
   }
 
   let previousTime = performance.now();
