@@ -99,6 +99,299 @@ function vecNormalize(v) {
   return vecScale(v, 1 / length);
 }
 
+function gravityDownVector(position, center) {
+  return vecNormalize(vecSub(center, position));
+}
+
+function tangentForwardFromDirection(direction, up) {
+  const projected = vecSub(direction, vecScale(up, vecDot(direction, up)));
+  return vecLength(projected) > 0.0001 ? vecNormalize(projected) : [0, 0, 0];
+}
+
+function quatNormalize(q) {
+  const length = Math.sqrt((q[0] * q[0]) + (q[1] * q[1]) + (q[2] * q[2]) + (q[3] * q[3]));
+  if (!length) {
+    return [1, 0, 0, 0];
+  }
+  return [q[0] / length, q[1] / length, q[2] / length, q[3] / length];
+}
+
+function quatMultiply(a, b) {
+  const [aw, ax, ay, az] = a;
+  const [bw, bx, by, bz] = b;
+  return [
+    aw * bw - ax * bx - ay * by - az * bz,
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+  ];
+}
+
+function quatFromAxisAngle(axis, angle) {
+  const halfAngle = angle * 0.5;
+  const sinHalf = Math.sin(halfAngle);
+  const unitAxis = vecNormalize(axis);
+  return quatNormalize([
+    Math.cos(halfAngle),
+    unitAxis[0] * sinHalf,
+    unitAxis[1] * sinHalf,
+    unitAxis[2] * sinHalf,
+  ]);
+}
+
+function quatRotateVector(quat, vector) {
+  const qVector = [0, vector[0], vector[1], vector[2]];
+  const qConjugate = [quat[0], -quat[1], -quat[2], -quat[3]];
+  const rotated = quatMultiply(quatMultiply(quat, qVector), qConjugate);
+  return [rotated[1], rotated[2], rotated[3]];
+}
+
+function quatSlerp(a, b, t) {
+  let cosTheta = (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]) + (a[3] * b[3]);
+  let end = [...b];
+  if (cosTheta < 0) {
+    cosTheta = -cosTheta;
+    end = [-b[0], -b[1], -b[2], -b[3]];
+  }
+
+  if (cosTheta > 0.9995) {
+    return quatNormalize([
+      a[0] + ((end[0] - a[0]) * t),
+      a[1] + ((end[1] - a[1]) * t),
+      a[2] + ((end[2] - a[2]) * t),
+      a[3] + ((end[3] - a[3]) * t),
+    ]);
+  }
+
+  const theta = Math.acos(cosTheta);
+  const sinTheta = Math.sin(theta);
+  const w1 = Math.sin((1 - t) * theta) / sinTheta;
+  const w2 = Math.sin(t * theta) / sinTheta;
+  return quatNormalize([
+    (a[0] * w1) + (end[0] * w2),
+    (a[1] * w1) + (end[1] * w2),
+    (a[2] * w1) + (end[2] * w2),
+    (a[3] * w1) + (end[3] * w2),
+  ]);
+}
+
+function raycastSurfaceAlongGravity(position, gravityDir, center, targetRadius, maxDistance) {
+  const dir = vecNormalize(gravityDir);
+  const rel = vecSub(position, center);
+  const a = 1;
+  const b = 2 * vecDot(rel, dir);
+  const c = vecDot(rel, rel) - (targetRadius * targetRadius);
+  const discriminant = (b * b) - (4 * a * c);
+  if (discriminant < 0) {
+    return null;
+  }
+
+  const sqrtDiscriminant = Math.sqrt(discriminant);
+  const t1 = (-b - sqrtDiscriminant) / (2 * a);
+  const t2 = (-b + sqrtDiscriminant) / (2 * a);
+  const candidates = [t1, t2]
+    .filter((t) => t >= 0 && t <= maxDistance)
+    .sort((x, y) => x - y);
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  const t = candidates[0];
+  return {
+    t,
+    position: vecAdd(position, vecScale(dir, t)),
+  };
+}
+
+function worldToVoxelIndex(position, voxelSize) {
+  return [
+    Math.floor(position[0] / voxelSize),
+    Math.floor(position[1] / voxelSize),
+    Math.floor(position[2] / voxelSize),
+  ];
+}
+
+function findClosestTile(position, tiles, planetCenter) {
+  const radial = vecNormalize(vecSub(position, planetCenter));
+  let bestTile = tiles[0] || null;
+  let bestAlignment = -Infinity;
+  for (let i = 0; i < tiles.length; i += 1) {
+    const tile = tiles[i];
+    const alignment = vecDot(tile.normal, radial);
+    if (alignment > bestAlignment) {
+      bestAlignment = alignment;
+      bestTile = tile;
+    }
+  }
+  return bestTile;
+}
+
+function worldToChunkVoxel(position, tiles, settingsPhysics) {
+  const tile = findClosestTile(position, tiles, settingsPhysics.planetCenter);
+  if (!tile) {
+    return null;
+  }
+  const rel = vecSub(position, tile.center);
+  const local = [
+    vecDot(rel, tile.tangent),
+    vecDot(rel, tile.bitangent),
+    vecDot(rel, tile.normal),
+  ];
+  const voxel = worldToVoxelIndex(local, settingsPhysics.voxelSize);
+  return {
+    tileID: tile.id,
+    local,
+    voxel,
+  };
+}
+
+function voxelKey(i, j, k) {
+  return `${i},${j},${k}`;
+}
+
+function voxelCenterFromIndex(i, j, k, voxelSize) {
+  return [
+    (i + 0.5) * voxelSize,
+    (j + 0.5) * voxelSize,
+    (k + 0.5) * voxelSize,
+  ];
+}
+
+function pseudoNoise3(v) {
+  const n = Math.sin((v[0] * 12.9898) + (v[1] * 78.233) + (v[2] * 37.719)) * 43758.5453;
+  const frac = n - Math.floor(n);
+  return (frac * 2) - 1;
+}
+
+function sampleBaseDensity(position, settingsPhysics) {
+  const rel = vecSub(position, settingsPhysics.planetCenter);
+  const terrain = settingsPhysics.terrainAmplitude
+    * pseudoNoise3(vecScale(rel, settingsPhysics.terrainFrequency));
+  return settingsPhysics.planetRadius - vecLength(rel) + terrain;
+}
+
+function getVoxelDensity(i, j, k, state, settingsPhysics) {
+  const key = voxelKey(i, j, k);
+  const override = state.voxelOverrides.get(key);
+  if (override === "AIR") {
+    return -1;
+  }
+  if (override === "SOLID") {
+    return 1;
+  }
+  const center = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
+  const baseDensity = sampleBaseDensity(center, settingsPhysics);
+  const modifiedDelta = state.modifiedDensity.get(key) || 0;
+  return baseDensity + modifiedDelta;
+}
+
+function isSolidAtWorld(position, state, settingsPhysics) {
+  const [i, j, k] = worldToVoxelIndex(position, settingsPhysics.voxelSize);
+  return getVoxelDensity(i, j, k, state, settingsPhysics) > 0;
+}
+
+function markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics) {
+  const mapping = worldToChunkVoxel(worldPosition, tiles, settingsPhysics);
+  if (!mapping) {
+    return;
+  }
+  const chunkSize = settingsPhysics.chunkSize;
+  const [i, j, k] = mapping.voxel;
+  const cx = Math.floor(i / chunkSize);
+  const cy = Math.floor(j / chunkSize);
+  const cz = Math.floor(k / chunkSize);
+  state.dirtyChunks.add(`${mapping.tileID}:${voxelKey(cx, cy, cz)}`);
+}
+
+function markDirtyChunkByVoxelIndex(i, j, k, tiles, state, settingsPhysics) {
+  const worldPosition = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
+  markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics);
+}
+
+function processDirtyChunkRemesh(state) {
+  state.dirtyChunks.forEach((chunkKey) => {
+    const chunkState = state.chunkStates.get(chunkKey) || { needsRemesh: false };
+    chunkState.needsRemesh = true;
+    state.chunkStates.set(chunkKey, chunkState);
+    // Placeholder for chunk-local meshing pipeline (marching cubes / greedy meshing).
+    // In a GPU-backed mesh path this is where we'd rebuild only this chunk.
+    chunkState.needsRemesh = false;
+  });
+  state.dirtyChunks.clear();
+}
+
+function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics, tiles) {
+  const s = settingsPhysics.voxelSize;
+  const minIndex = worldToVoxelIndex(vecSub(center, [radius, radius, radius]), s);
+  const maxIndex = worldToVoxelIndex(vecAdd(center, [radius, radius, radius]), s);
+
+  for (let i = minIndex[0]; i <= maxIndex[0]; i += 1) {
+    for (let j = minIndex[1]; j <= maxIndex[1]; j += 1) {
+      for (let k = minIndex[2]; k <= maxIndex[2]; k += 1) {
+        const voxelCenter = voxelCenterFromIndex(i, j, k, s);
+        const distance = vecLength(vecSub(voxelCenter, center));
+        if (distance > radius) continue;
+        const falloff = 1 - (distance / radius);
+        const delta = strengthSign * settingsPhysics.editStrength * falloff;
+        const key = voxelKey(i, j, k);
+        state.modifiedDensity.set(key, (state.modifiedDensity.get(key) || 0) + delta);
+        markDirtyChunkForVoxel(voxelCenter, tiles, state, settingsPhysics);
+      }
+    }
+  }
+}
+
+function raycastDensityField(origin, direction, maxDistance, state, settingsPhysics) {
+  const s = settingsPhysics.voxelSize;
+  const dir = vecNormalize(direction);
+  let [ix, iy, iz] = worldToVoxelIndex(origin, s);
+  const stepX = dir[0] >= 0 ? 1 : -1;
+  const stepY = dir[1] >= 0 ? 1 : -1;
+  const stepZ = dir[2] >= 0 ? 1 : -1;
+
+  const nextBoundaryX = (ix + (stepX > 0 ? 1 : 0)) * s;
+  const nextBoundaryY = (iy + (stepY > 0 ? 1 : 0)) * s;
+  const nextBoundaryZ = (iz + (stepZ > 0 ? 1 : 0)) * s;
+
+  let tMaxX = dir[0] !== 0 ? (nextBoundaryX - origin[0]) / dir[0] : Infinity;
+  let tMaxY = dir[1] !== 0 ? (nextBoundaryY - origin[1]) / dir[1] : Infinity;
+  let tMaxZ = dir[2] !== 0 ? (nextBoundaryZ - origin[2]) / dir[2] : Infinity;
+  const tDeltaX = dir[0] !== 0 ? s / Math.abs(dir[0]) : Infinity;
+  const tDeltaY = dir[1] !== 0 ? s / Math.abs(dir[1]) : Infinity;
+  const tDeltaZ = dir[2] !== 0 ? s / Math.abs(dir[2]) : Infinity;
+
+  let t = 0;
+  let hitNormal = [0, 0, 0];
+  while (t <= maxDistance) {
+    if (getVoxelDensity(ix, iy, iz, state, settingsPhysics) > 0) {
+      return {
+        position: vecAdd(origin, vecScale(dir, t)),
+        voxel: [ix, iy, iz],
+        normal: hitNormal,
+      };
+    }
+
+    if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+      ix += stepX;
+      t = tMaxX;
+      tMaxX += tDeltaX;
+      hitNormal = [-stepX, 0, 0];
+    } else if (tMaxY < tMaxZ) {
+      iy += stepY;
+      t = tMaxY;
+      tMaxY += tDeltaY;
+      hitNormal = [0, -stepY, 0];
+    } else {
+      iz += stepZ;
+      t = tMaxZ;
+      tMaxZ += tDeltaZ;
+      hitNormal = [0, 0, -stepZ];
+    }
+  }
+  return null;
+}
+
 function triangleCircumcenter(a, b, c, radius) {
   const u = vecSub(b, a);
   const v = vecSub(c, a);
@@ -334,8 +627,8 @@ function buildTriangleNodeGraph(mesh, radius) {
   return nodes;
 }
 
-function buildDynamicGravityFrame(position) {
-  const up = vecNormalize(position);
+function buildDynamicGravityFrame(position, center = [0, 0, 0]) {
+  const up = vecNormalize(vecSub(position, center));
   const worldUp = Math.abs(up[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
   const surfaceRight = vecNormalize(vecCross(worldUp, up));
   const surfaceForward = vecNormalize(vecCross(up, surfaceRight));
@@ -357,14 +650,14 @@ function rotateAroundAxis(vector, axis, angle) {
   return vecAdd(vecAdd(term1, term2), term3);
 }
 
-function buildCameraBasis(position, moveForward, pitch) {
-  const frame = buildDynamicGravityFrame(position);
+function buildCameraBasis(position, moveForward, center = [0, 0, 0]) {
+  const frame = buildDynamicGravityFrame(position, center);
   const { up } = frame;
 
   const forwardFlatRaw = vecSub(moveForward, vecScale(up, vecDot(moveForward, up)));
   const forwardFlat = vecLength(forwardFlatRaw) > 0.0001 ? vecNormalize(forwardFlatRaw) : frame.surfaceForward;
   const right = vecNormalize(vecCross(forwardFlat, up));
-  const forward = vecNormalize(vecAdd(vecScale(forwardFlat, Math.cos(pitch)), vecScale(up, Math.sin(pitch))));
+  const forward = vecLength(moveForward) > 0.0001 ? vecNormalize(moveForward) : forwardFlat;
   const cameraUp = vecNormalize(vecCross(right, forward));
 
   return {
@@ -601,19 +894,36 @@ function bootWorld() {
     selectedSlot: 1,
     paused: false,
     turnDelta: 0,
-    pitch: 0,
+    pitchDelta: 0,
     moveForward: [1, 0, 0],
     player: {
       position: [0, 1.08, 0],
       velocity: [0, 0, 0],
       onGround: false,
+      rotation: [1, 0, 0, 0],
     },
+    modifiedDensity: new Map(),
+    voxelOverrides: new Map(),
+    dirtyChunks: new Set(),
+    chunkStates: new Map(),
   };
   renderHotbar(state.selectedSlot);
 
   const settingsPhysics = {
     planetRadius: 1,
-    playerHeight: 0.08,
+    planetCenter: [0, 0, 0],
+    hexHeight: 0.0444444444,
+    playerHeightHexes: 1.8,
+    groundProbeDistance: 0.12,
+    voxelSize: 0.04,
+    chunkSize: 16,
+    terrainAmplitude: 0.06,
+    terrainFrequency: 3.8,
+    editBrushRadius: 0.08,
+    editStrength: 0.32,
+    editReach: 3.5,
+    placeOffsetScale: 0.5,
+    playerCollisionRadius: 0.06,
     gravity: 3.6,
     moveAccel: 6.2,
     jumpSpeed: 1.2,
@@ -677,13 +987,17 @@ function bootWorld() {
     }
   });
 
+  canvas.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
+
   document.addEventListener("pointerlockchange", () => {
     if (!isLocked() && !state.paused) {
       state.paused = true;
       pauseSidebar.classList.add("open");
     }
     hud.textContent = isLocked()
-      ? "Pointer locked • FPS movement + dynamic gravity frame • Space jump • Mouse look"
+      ? "Pointer locked • WASD move • Space jump • Mouse look • LMB mine • RMB place"
       : "Click to lock cursor • FPS movement + dynamic gravity frame";
   });
 
@@ -691,31 +1005,108 @@ function bootWorld() {
     if (!isLocked()) return;
     const sensitivity = 0.0025;
     state.turnDelta -= event.movementX * sensitivity;
-    state.pitch -= event.movementY * sensitivity;
-    state.pitch = Math.max(-1.35, Math.min(1.35, state.pitch));
+    state.pitchDelta -= event.movementY * sensitivity;
+  });
+
+  function handleMineOrPlace(button) {
+    const basis = buildCameraBasis(
+      state.player.position,
+      state.moveForward,
+      settingsPhysics.planetCenter,
+    );
+    const cameraPosition = vecAdd(state.player.position, vecScale(basis.up, 0.02));
+    const hit = raycastDensityField(
+      cameraPosition,
+      basis.forward,
+      settingsPhysics.editReach,
+      state,
+      settingsPhysics,
+    );
+    if (!hit) return;
+    const hitPosition = hit.position;
+    const hitNormal = vecLength(hit.normal) > 0.0001
+      ? vecNormalize(hit.normal)
+      : vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
+
+    if (button === 0) {
+      const [i, j, k] = hit.voxel;
+      state.voxelOverrides.set(voxelKey(i, j, k), "AIR");
+      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
+    }
+
+    if (button === 2) {
+      const placePosition = vecAdd(
+        hitPosition,
+        vecScale(hitNormal, settingsPhysics.placeOffsetScale * settingsPhysics.voxelSize),
+      );
+      const playerDistance = vecLength(vecSub(placePosition, state.player.position));
+      if (playerDistance <= settingsPhysics.playerCollisionRadius) return;
+      const [i, j, k] = worldToVoxelIndex(placePosition, settingsPhysics.voxelSize);
+      state.voxelOverrides.set(voxelKey(i, j, k), "SOLID");
+      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
+    }
+  }
+
+  document.addEventListener("mousedown", (event) => {
+    if (!isLocked()) return;
+    if (event.button !== 0 && event.button !== 2) return;
+    event.preventDefault();
+    handleMineOrPlace(event.button);
   });
 
   function updatePlayer(dt) {
-    const up = vecNormalize(state.player.position);
-    if (Math.abs(state.turnDelta) > 0.00001) {
-      state.moveForward = rotateAroundAxis(state.moveForward, up, state.turnDelta);
+    const radialFromCenter = vecSub(state.player.position, settingsPhysics.planetCenter);
+    const up = vecNormalize(radialFromCenter);
+    const gravityDown = gravityDownVector(state.player.position, settingsPhysics.planetCenter);
+    if (Math.abs(state.turnDelta) > 0.00001 || Math.abs(state.pitchDelta) > 0.00001) {
+      if (Math.abs(state.turnDelta) > 0.00001) {
+        const yawQuat = quatFromAxisAngle(up, state.turnDelta);
+        state.moveForward = vecNormalize(quatRotateVector(yawQuat, state.moveForward));
+      }
+
+      const yawBasis = buildCameraBasis(
+        state.player.position,
+        state.moveForward,
+        settingsPhysics.planetCenter,
+      );
+
+      if (Math.abs(state.pitchDelta) > 0.00001) {
+        const pitchQuat = quatFromAxisAngle(yawBasis.right, state.pitchDelta);
+        const pitchedForward = vecNormalize(quatRotateVector(pitchQuat, state.moveForward));
+        const pitchLimit = Math.sin(1.35);
+        const verticalComponent = vecDot(pitchedForward, up);
+        if (Math.abs(verticalComponent) <= pitchLimit) {
+          state.moveForward = pitchedForward;
+        }
+      }
+
       state.turnDelta = 0;
+      state.pitchDelta = 0;
     }
 
-    const basis = buildCameraBasis(state.player.position, state.moveForward, 0);
+    const basis = buildCameraBasis(
+      state.player.position,
+      state.moveForward,
+      settingsPhysics.planetCenter,
+    );
+    const tangentForward = tangentForwardFromDirection(basis.forward, up);
+    const tangentRight = vecNormalize(vecCross(tangentForward, up));
     let move = [0, 0, 0];
 
-    if (state.keys.w) move = vecAdd(move, basis.forwardFlat);
-    if (state.keys.s) move = vecSub(move, basis.forwardFlat);
-    if (state.keys.d) move = vecAdd(move, basis.right);
-    if (state.keys.a) move = vecSub(move, basis.right);
+    if (state.keys.w) move = vecAdd(move, tangentForward);
+    if (state.keys.s) move = vecSub(move, tangentForward);
+    if (state.keys.d) move = vecAdd(move, tangentRight);
+    if (state.keys.a) move = vecSub(move, tangentRight);
 
     if (vecLength(move) > 0) {
       move = vecNormalize(move);
       state.player.velocity = vecAdd(state.player.velocity, vecScale(move, settingsPhysics.moveAccel * dt));
     }
 
-    state.player.velocity = vecAdd(state.player.velocity, vecScale(up, -settingsPhysics.gravity * dt));
+    state.player.velocity = vecAdd(
+      state.player.velocity,
+      vecScale(gravityDown, settingsPhysics.gravity * dt),
+    );
 
     if (state.keys.space && state.player.onGround) {
       state.player.velocity = vecAdd(state.player.velocity, vecScale(up, settingsPhysics.jumpSpeed));
@@ -730,11 +1121,19 @@ function bootWorld() {
     }
     state.player.position = nextPosition;
 
-    const distance = vecLength(state.player.position);
-    const targetDistance = settingsPhysics.planetRadius + settingsPhysics.playerHeight;
-    if (distance <= targetDistance) {
-      const correctedUp = vecNormalize(state.player.position);
-      state.player.position = vecScale(correctedUp, targetDistance);
+    const playerHeight = settingsPhysics.hexHeight * settingsPhysics.playerHeightHexes;
+    const targetDistance = settingsPhysics.planetRadius + playerHeight;
+    const groundHit = raycastSurfaceAlongGravity(
+      state.player.position,
+      gravityDown,
+      settingsPhysics.planetCenter,
+      targetDistance,
+      settingsPhysics.groundProbeDistance,
+    );
+
+    if (groundHit) {
+      state.player.position = groundHit.position;
+      const correctedUp = vecNormalize(vecSub(state.player.position, settingsPhysics.planetCenter));
       const inwardSpeed = vecDot(state.player.velocity, correctedUp);
       if (inwardSpeed < 0) {
         state.player.velocity = vecSub(state.player.velocity, vecScale(correctedUp, inwardSpeed));
@@ -744,7 +1143,20 @@ function bootWorld() {
       state.player.onGround = false;
     }
 
-    const radial = vecNormalize(state.player.position);
+    const radial = vecNormalize(vecSub(state.player.position, settingsPhysics.planetCenter));
+    const oldUp = up;
+    const newUp = radial;
+    const axis = vecCross(oldUp, newUp);
+    const axisLength = vecLength(axis);
+    const dot = Math.max(-1, Math.min(1, vecDot(oldUp, newUp)));
+    if (axisLength > 0.000001 && dot < 0.999999) {
+      const angle = Math.acos(dot);
+      const deltaRotation = quatFromAxisAngle(axis, angle);
+      const targetRotation = quatNormalize(quatMultiply(deltaRotation, state.player.rotation));
+      const smoothing = Math.min(1, dt * 20);
+      state.player.rotation = quatSlerp(state.player.rotation, targetRotation, smoothing);
+    }
+
     const radialComponent = vecScale(radial, vecDot(state.player.velocity, radial));
     const tangential = vecSub(state.player.velocity, radialComponent);
     state.player.velocity = vecAdd(radialComponent, vecScale(tangential, settingsPhysics.damping));
@@ -762,10 +1174,15 @@ function bootWorld() {
     if (!state.paused) {
       updatePlayer(dt);
     }
+    processDirtyChunkRemesh(state);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const basis = buildCameraBasis(state.player.position, state.moveForward, state.pitch);
+    const basis = buildCameraBasis(
+      state.player.position,
+      state.moveForward,
+      settingsPhysics.planetCenter,
+    );
     const camera = {
       position: vecAdd(state.player.position, vecScale(basis.up, 0.02)),
       forward: basis.forward,
@@ -773,7 +1190,9 @@ function bootWorld() {
       up: basis.cameraUp,
     };
 
-    const polygons = worldModel.topology.tiles.map((tile) => {
+    const polygons = worldModel.topology.tiles
+      .filter((tile) => isSolidAtWorld(tile.center, state, settingsPhysics))
+      .map((tile) => {
       const topCorners = tile.corners;
       const bottomCorners = tile.corners.map((corner) => vecScale(corner, 0.93));
       const projected = topCorners
@@ -784,14 +1203,14 @@ function bootWorld() {
       }
       const zAverage = projected.reduce((sum, p) => sum + p.z, 0) / projected.length;
 
-      return {
-        tile,
-        projected,
-        topCorners,
-        bottomCorners,
-        zAverage,
-      };
-    }).filter(Boolean);
+        return {
+          tile,
+          projected,
+          topCorners,
+          bottomCorners,
+          zAverage,
+        };
+      }).filter(Boolean);
 
     polygons
       .sort((a, b) => b.zAverage - a.zAverage)
@@ -815,7 +1234,7 @@ function bootWorld() {
           ctx.lineTo(b2.x, b2.y);
           ctx.lineTo(b1.x, b1.y);
           ctx.closePath();
-          ctx.fillStyle = `rgba(106, 74, 45, ${sideShade})`;
+          ctx.fillStyle = `rgb(${Math.round(106 * sideShade)}, ${Math.round(74 * sideShade)}, ${Math.round(45 * sideShade)})`;
           ctx.fill();
         }
 
@@ -831,8 +1250,8 @@ function bootWorld() {
         ctx.closePath();
 
         ctx.fillStyle = polygon.tile.isPentagon
-          ? `rgba(136, 183, 78, ${topShade})`
-          : `rgba(112, 199, 106, ${topShade})`;
+          ? `rgb(${Math.round(136 * topShade)}, ${Math.round(183 * topShade)}, ${Math.round(78 * topShade)})`
+          : `rgb(${Math.round(112 * topShade)}, ${Math.round(199 * topShade)}, ${Math.round(106 * topShade)})`;
 
         ctx.fill();
         ctx.strokeStyle = "rgba(32, 54, 33, 0.55)";
