@@ -540,6 +540,9 @@ export function createGameSession() {
     ctx.fill();
   }
 
+  // Compatibility no-op: older sessions may still call this from cached bundles.
+  function drawDistantPlanets() {}
+
   function drawSky(width, height, sunX, sunY) {
     ctx.fillStyle = "#9bc2f2";
     ctx.fillRect(0, 0, width, height);
