@@ -273,6 +273,13 @@ function sampleBaseDensity(position, settingsPhysics) {
 
 function getVoxelDensity(i, j, k, state, settingsPhysics) {
   const key = voxelKey(i, j, k);
+  const override = state.voxelOverrides.get(key);
+  if (override === "AIR") {
+    return -1;
+  }
+  if (override === "SOLID") {
+    return 1;
+  }
   const center = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
   const baseDensity = sampleBaseDensity(center, settingsPhysics);
   const modifiedDelta = state.modifiedDensity.get(key) || 0;
@@ -295,6 +302,23 @@ function markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics) {
   const cy = Math.floor(j / chunkSize);
   const cz = Math.floor(k / chunkSize);
   state.dirtyChunks.add(`${mapping.tileID}:${voxelKey(cx, cy, cz)}`);
+}
+
+function markDirtyChunkByVoxelIndex(i, j, k, tiles, state, settingsPhysics) {
+  const worldPosition = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
+  markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics);
+}
+
+function processDirtyChunkRemesh(state) {
+  state.dirtyChunks.forEach((chunkKey) => {
+    const chunkState = state.chunkStates.get(chunkKey) || { needsRemesh: false };
+    chunkState.needsRemesh = true;
+    state.chunkStates.set(chunkKey, chunkState);
+    // Placeholder for chunk-local meshing pipeline (marching cubes / greedy meshing).
+    // In a GPU-backed mesh path this is where we'd rebuild only this chunk.
+    chunkState.needsRemesh = false;
+  });
+  state.dirtyChunks.clear();
 }
 
 function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics, tiles) {
@@ -879,7 +903,9 @@ function bootWorld() {
       rotation: [1, 0, 0, 0],
     },
     modifiedDensity: new Map(),
+    voxelOverrides: new Map(),
     dirtyChunks: new Set(),
+    chunkStates: new Map(),
   };
   renderHotbar(state.selectedSlot);
 
@@ -1003,14 +1029,9 @@ function bootWorld() {
       : vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
 
     if (button === 0) {
-      modifyDensitySphere(
-        hitPosition,
-        settingsPhysics.editBrushRadius,
-        -1,
-        state,
-        settingsPhysics,
-        worldModel.topology.tiles,
-      );
+      const [i, j, k] = hit.voxel;
+      state.voxelOverrides.set(voxelKey(i, j, k), "AIR");
+      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
     }
 
     if (button === 2) {
@@ -1020,14 +1041,9 @@ function bootWorld() {
       );
       const playerDistance = vecLength(vecSub(placePosition, state.player.position));
       if (playerDistance <= settingsPhysics.playerCollisionRadius) return;
-      modifyDensitySphere(
-        placePosition,
-        settingsPhysics.editBrushRadius,
-        1,
-        state,
-        settingsPhysics,
-        worldModel.topology.tiles,
-      );
+      const [i, j, k] = worldToVoxelIndex(placePosition, settingsPhysics.voxelSize);
+      state.voxelOverrides.set(voxelKey(i, j, k), "SOLID");
+      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
     }
   }
 
@@ -1158,6 +1174,7 @@ function bootWorld() {
     if (!state.paused) {
       updatePlayer(dt);
     }
+    processDirtyChunkRemesh(state);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
