@@ -57,71 +57,18 @@ function dot(a, b) {
   return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-function cellDensityFromSize(size) {
-  switch (size) {
-    case "tiny":
-      return 72;
-    case "medium":
-      return 162;
-    case "large":
-      return 320;
-    case "colossal":
-      return 642;
-    default:
-      return 162;
-  }
-
-  return cells;
-}
-
-function projectPoint(point, camera, width, height, focal) {
-  const rel = {
-    x: point.x - camera.position.x,
-    y: point.y - camera.position.y,
-    z: point.z - camera.position.z,
-  };
-
-  const view = {
-    x: dot(rel, camera.right),
-    y: dot(rel, camera.up),
-    z: dot(rel, camera.forward),
-  };
-
-  if (view.z <= 0.08) return null;
+function projectToSphere(point, radius = 1) {
+  const unit = normalize(point);
   return {
-    x: width * 0.5 + (view.x / view.z) * focal,
-    y: height * 0.56 - (view.y / view.z) * focal,
-    z: view.z,
+    x: unit.x * radius,
+    y: unit.y * radius,
+    z: unit.z * radius,
   };
 }
 
-function tileScaleFromCellCount(totalCells) {
-  const areaPerCell = (4 * Math.PI) / Math.max(1, totalCells);
-  const radius = Math.sqrt(areaPerCell / (3 * Math.sqrt(3)));
-  return clamp(radius, 0.03, 0.11);
-}
-
-function buildPlanetCells(topology, size) {
-  const total = Math.max(topology?.totalCells || 0, cellDensityFromSize(size));
-  const golden = (1 + Math.sqrt(5)) / 2;
-  const cells = [];
-  for (let i = 0; i < total; i += 1) {
-    const t = (i + 0.5) / total;
-    const y = 1 - 2 * t;
-    const radius = Math.sqrt(Math.max(0, 1 - y * y));
-    const theta = 2 * Math.PI * i / golden;
-    cells.push({
-      normal: {
-        x: Math.cos(theta) * radius,
-        y,
-        z: Math.sin(theta) * radius,
-      },
-      isPentagon: false,
-    });
-  }
-
+function createIcosahedron() {
   const phi = (1 + Math.sqrt(5)) / 2;
-  const icoSeeds = [
+  const vertices = [
     { x: -1, y: phi, z: 0 },
     { x: 1, y: phi, z: 0 },
     { x: -1, y: -phi, z: 0 },
@@ -134,31 +81,209 @@ function buildPlanetCells(topology, size) {
     { x: phi, y: 0, z: 1 },
     { x: -phi, y: 0, z: -1 },
     { x: -phi, y: 0, z: 1 },
-  ].map(normalize);
+  ].map((point) => projectToSphere(point, 1));
 
-  const used = new Set();
-  for (const seed of icoSeeds) {
-    let bestIndex = -1;
-    let bestDot = -Infinity;
-    for (let i = 0; i < cells.length; i += 1) {
-      if (used.has(i)) continue;
-      const d = dot(seed, cells[i].normal);
-      if (d > bestDot) {
-        bestDot = d;
-        bestIndex = i;
-      }
+  const faces = [
+    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+    [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+    [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+  ];
+
+  return { vertices, faces };
+}
+
+function subdivideIcosphere(vertices, faces, levels) {
+  let currentVertices = vertices.slice();
+  let currentFaces = faces.slice();
+
+  for (let step = 0; step < levels; step += 1) {
+    const nextFaces = [];
+    const midpointCache = new Map();
+
+    const midpoint = (a, b) => {
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      if (midpointCache.has(key)) return midpointCache.get(key);
+
+      const pa = currentVertices[a];
+      const pb = currentVertices[b];
+      const idx = currentVertices.length;
+      currentVertices.push(projectToSphere({
+        x: (pa.x + pb.x) * 0.5,
+        y: (pa.y + pb.y) * 0.5,
+        z: (pa.z + pb.z) * 0.5,
+      }));
+      midpointCache.set(key, idx);
+      return idx;
+    };
+
+    for (const [a, b, c] of currentFaces) {
+      const ab = midpoint(a, b);
+      const bc = midpoint(b, c);
+      const ca = midpoint(c, a);
+      nextFaces.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]);
     }
-    if (bestIndex >= 0) {
-      used.add(bestIndex);
-      cells[bestIndex].isPentagon = true;
+
+    currentFaces = nextFaces;
+  }
+
+  return { vertices: currentVertices, faces: currentFaces };
+}
+
+function resolveSubdivisionLevel(topology) {
+  if (Number.isFinite(topology?.subdivisionLevel)) {
+    return Math.max(0, Math.floor(topology.subdivisionLevel));
+  }
+
+  if (Number.isFinite(topology?.frequency) && topology.frequency > 0) {
+    return Math.max(0, Math.round(Math.log2(topology.frequency)));
+  }
+
+  if (Number.isFinite(topology?.totalCells) && topology.totalCells >= 12) {
+    const n = (topology.totalCells - 2) / 10;
+    if (n > 0) {
+      return Math.max(0, Math.round(Math.log(n) / Math.log(4)));
     }
   }
 
-  const tileRadius = tileScaleFromCellCount(total);
-  const tileHeight = clamp(tileRadius * 0.55, 0.014, 0.05);
+  return 0;
+}
+
+function buildDualCellsFromTriangles(vertices, faces) {
+  const triangleVertices = faces.map(([a, b, c]) =>
+    projectToSphere({
+      x: (vertices[a].x + vertices[b].x + vertices[c].x) / 3,
+      y: (vertices[a].y + vertices[b].y + vertices[c].y) / 3,
+      z: (vertices[a].z + vertices[b].z + vertices[c].z) / 3,
+    }),
+  );
+
+  const triangleBuckets = Array.from({ length: vertices.length }, () => []);
+  const neighborSets = Array.from({ length: vertices.length }, () => new Set());
+  faces.forEach(([a, b, c], triangleIndex) => {
+    triangleBuckets[a].push(triangleIndex);
+    triangleBuckets[b].push(triangleIndex);
+    triangleBuckets[c].push(triangleIndex);
+    neighborSets[a].add(b);
+    neighborSets[a].add(c);
+    neighborSets[b].add(a);
+    neighborSets[b].add(c);
+    neighborSets[c].add(a);
+    neighborSets[c].add(b);
+  });
+
+  return vertices.map((normal, vertexIndex) => {
+    const adjacentTriangles = triangleBuckets[vertexIndex];
+    const tangentX = normalize(Math.abs(normal.y) > 0.9 ? cross({ x: 1, y: 0, z: 0 }, normal) : cross({ x: 0, y: 1, z: 0 }, normal));
+    const tangentY = normalize(cross(normal, tangentX));
+
+    const corners = adjacentTriangles
+      .map((triangleIndex) => {
+        const triVertex = triangleVertices[triangleIndex];
+        const planar = normalize({
+          x: triVertex.x - normal.x * dot(triVertex, normal),
+          y: triVertex.y - normal.y * dot(triVertex, normal),
+          z: triVertex.z - normal.z * dot(triVertex, normal),
+        });
+        return {
+          corner: triVertex,
+          angle: Math.atan2(dot(planar, tangentY), dot(planar, tangentX)),
+        };
+      })
+      .sort((lhs, rhs) => lhs.angle - rhs.angle)
+      .map((entry) => entry.corner);
+
+    const neighbors = [...neighborSets[vertexIndex]]
+      .map((neighborIndex) => {
+        const neighbor = vertices[neighborIndex];
+        const planar = normalize({
+          x: neighbor.x - normal.x * dot(neighbor, normal),
+          y: neighbor.y - normal.y * dot(neighbor, normal),
+          z: neighbor.z - normal.z * dot(neighbor, normal),
+        });
+        return {
+          neighborIndex,
+          angle: Math.atan2(dot(planar, tangentY), dot(planar, tangentX)),
+        };
+      })
+      .sort((lhs, rhs) => lhs.angle - rhs.angle)
+      .map((entry) => entry.neighborIndex);
+
+    const isPentagon = corners.length === 5;
+
+    return {
+      center: normal,
+      normal,
+      corners,
+      neighbors,
+      type: isPentagon ? "pentagon" : "hexagon",
+      isPentagon,
+    };
+  });
+}
+
+function attachCubeCoordinates(cells) {
+  const directions = [
+    { q: 1, r: -1, s: 0 },
+    { q: 1, r: 0, s: -1 },
+    { q: 0, r: 1, s: -1 },
+    { q: -1, r: 1, s: 0 },
+    { q: -1, r: 0, s: 1 },
+    { q: 0, r: -1, s: 1 },
+  ];
+
+  cells.forEach((cell) => {
+    cell.cube = null;
+  });
+
+  const seed = cells.findIndex((cell) => !cell.isPentagon);
+  if (seed < 0) return cells;
+
+  cells[seed].cube = { q: 0, r: 0, s: 0 };
+  const queue = [seed];
+
+  while (queue.length > 0) {
+    const currentIndex = queue.shift();
+    const current = cells[currentIndex];
+    if (!current?.cube) continue;
+
+    current.neighbors.forEach((neighborIndex, neighborOrder) => {
+      const neighbor = cells[neighborIndex];
+      if (!neighbor) return;
+      if (neighbor.cube) return;
+
+      const dir = directions[neighborOrder % directions.length];
+      neighbor.cube = {
+        q: current.cube.q + dir.q,
+        r: current.cube.r + dir.r,
+        s: current.cube.s + dir.s,
+      };
+      queue.push(neighborIndex);
+    });
+  }
+
+  return cells;
+}
+
+function buildPlanetCells(topology) {
+  const subdivision = resolveSubdivisionLevel(topology);
+  const { vertices: baseVertices, faces: baseFaces } = createIcosahedron();
+  const { vertices, faces } = subdivideIcosphere(baseVertices, baseFaces, subdivision);
+  const cells = attachCubeCoordinates(buildDualCellsFromTriangles(vertices, faces));
+
+  const avgCornerDistance = cells.reduce((acc, cell) => {
+    let sum = 0;
+    for (const corner of cell.corners) {
+      sum += Math.acos(clamp(dot(cell.normal, corner), -1, 1));
+    }
+    return acc + sum / Math.max(1, cell.corners.length);
+  }, 0) / Math.max(1, cells.length);
+
+  const tileRadius = clamp(avgCornerDistance * 0.62, 0.018, 0.08);
+  const tileHeight = clamp(tileRadius * 0.46, 0.01, 0.032);
   for (const cell of cells) {
-    cell.tileRadius = cell.isPentagon ? tileRadius * 1.06 : tileRadius;
-    cell.tileHeight = cell.isPentagon ? tileHeight * 1.15 : tileHeight;
+    cell.tileRadius = tileRadius;
+    cell.tileHeight = cell.isPentagon ? tileHeight * 1.1 : tileHeight;
   }
 
   return cells;
@@ -350,38 +475,23 @@ export function createGameSession() {
       y: cell.normal.y * (PLANET_OUTER_RADIUS + cell.tileHeight),
       z: cell.normal.z * (PLANET_OUTER_RADIUS + cell.tileHeight),
     };
-    const bottomCenter = {
-      x: cell.normal.x * PLANET_INNER_AIR_RADIUS,
-      y: cell.normal.y * PLANET_INNER_AIR_RADIUS,
-      z: cell.normal.z * PLANET_INNER_AIR_RADIUS,
-    };
 
-    const east = normalize(cross({ x: 0, y: 1, z: 0 }, cell.normal));
-    const north = normalize(cross(cell.normal, east));
-    const sideCount = cell.isPentagon ? 5 : 6;
-    const tileRadius = cell.tileRadius;
+    const sideCount = cell.corners.length;
 
     const topPoints = [];
     const bottomPoints = [];
 
-    for (let i = 0; i < sideCount; i += 1) {
-      const a = ((Math.PI * 2) / sideCount) * i + (cell.isPentagon ? Math.PI / 10 : Math.PI / 6);
-      const ringOffset = {
-        x: east.x * Math.cos(a) * tileRadius + north.x * Math.sin(a) * tileRadius,
-        y: east.y * Math.cos(a) * tileRadius + north.y * Math.sin(a) * tileRadius,
-        z: east.z * Math.cos(a) * tileRadius + north.z * Math.sin(a) * tileRadius,
-      };
-
+    for (const corner of cell.corners) {
       topPoints.push({
-        x: topCenter.x + ringOffset.x,
-        y: topCenter.y + ringOffset.y,
-        z: topCenter.z + ringOffset.z,
+        x: corner.x * (PLANET_OUTER_RADIUS + cell.tileHeight),
+        y: corner.y * (PLANET_OUTER_RADIUS + cell.tileHeight),
+        z: corner.z * (PLANET_OUTER_RADIUS + cell.tileHeight),
       });
 
       bottomPoints.push({
-        x: bottomCenter.x + ringOffset.x * 0.9,
-        y: bottomCenter.y + ringOffset.y * 0.9,
-        z: bottomCenter.z + ringOffset.z * 0.9,
+        x: corner.x * PLANET_INNER_AIR_RADIUS,
+        y: corner.y * PLANET_INNER_AIR_RADIUS,
+        z: corner.z * PLANET_INNER_AIR_RADIUS,
       });
     }
 
@@ -537,7 +647,7 @@ export function createGameSession() {
 
     infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | ${cameraDetached ? "Free camera" : "First-person"} | ${
       world.topology.hexagonCells
-    } hex + ${world.topology.pentagonCells} pent | Hollow core r=${PLANET_INNER_AIR_RADIUS.toFixed(
+    } hex + ${world.topology.pentagonCells} pent | Subdiv ${resolveSubdivisionLevel(world.topology)} | Hollow core r=${PLANET_INNER_AIR_RADIUS.toFixed(
       2,
     )} | W/S/A/D move, Mouse look, Space up, Shift down, P toggle camera`;
   }
@@ -612,7 +722,7 @@ export function createGameSession() {
   return {
     start(nextWorld) {
       world = nextWorld;
-      planetCells = buildPlanetCells(world.topology, world.size);
+      planetCells = buildPlanetCells(world.topology);
       player.longitude = 0;
       player.latitude = 0;
       player.radialOffset = 0;
