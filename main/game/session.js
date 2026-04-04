@@ -305,7 +305,7 @@ function buildPlanetCells(topology) {
   const tileHeight = clamp(tileRadius * 0.62, 0.014, 0.05);
   for (const cell of cells) {
     cell.tileRadius = tileRadius;
-    cell.tileHeight = cell.isPentagon ? tileHeight * 1.1 : tileHeight;
+    cell.tileHeight = tileHeight;
   }
 
   return cells;
@@ -567,7 +567,7 @@ export function createGameSession() {
     const bottomPoints = [];
 
     for (const corner of cell.corners) {
-      const topScale = PLANET_OUTER_RADIUS + cell.tileHeight + 0.006;
+      const topScale = PLANET_OUTER_RADIUS + cell.tileHeight + 0.001;
       topPoints.push({
         x: corner.x * topScale,
         y: corner.y * topScale,
@@ -735,8 +735,8 @@ export function createGameSession() {
         z: cell.normal.z * PLANET_OUTER_RADIUS - camera.position.z,
       };
       const depth = dot(toCell, camera.forward);
-      if (depth <= 0.12) continue;
-      const globeVisibilityCutoff = cameraDetached || cameraZoom > 0.7 ? -1 : 0.06;
+      if (depth <= 0.03) continue;
+      const globeVisibilityCutoff = cameraDetached || cameraZoom > 0.7 ? -1 : -0.04;
       if (dot(cell.normal, playerNormal) < globeVisibilityCutoff) continue;
       drawQueue.push({ cell, depth });
     }
