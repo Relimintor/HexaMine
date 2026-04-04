@@ -70,6 +70,29 @@ function cellDensityFromSize(size) {
     default:
       return 162;
   }
+
+  return cells;
+}
+
+function projectPoint(point, camera, width, height, focal) {
+  const rel = {
+    x: point.x - camera.position.x,
+    y: point.y - camera.position.y,
+    z: point.z - camera.position.z,
+  };
+
+  const view = {
+    x: dot(rel, camera.right),
+    y: dot(rel, camera.up),
+    z: dot(rel, camera.forward),
+  };
+
+  if (view.z <= 0.08) return null;
+  return {
+    x: width * 0.5 + (view.x / view.z) * focal,
+    y: height * 0.56 - (view.y / view.z) * focal,
+    z: view.z,
+  };
 }
 
 function tileScaleFromCellCount(totalCells) {
@@ -181,6 +204,7 @@ export function createGameSession() {
   let lookPitch = 0;
   let cameraZoom = 0;
   let cameraDetached = false;
+  let freeCameraPos = { x: 0, y: 0, z: 1.2 };
 
   const player = {
     longitude: 0,
@@ -203,6 +227,52 @@ export function createGameSession() {
     const down = ACTIVE_KEYS.has("shift") || ACTIVE_KEYS.has("control");
 
     const moveSpeed = 0.02;
+
+    if (cameraDetached) {
+      const flySpeed = 0.045;
+      const worldUp = { x: 0, y: 1, z: 0 };
+      const lookForward = normalize({
+        x: Math.sin(lookYaw) * Math.cos(lookPitch),
+        y: Math.sin(lookPitch),
+        z: Math.cos(lookYaw) * Math.cos(lookPitch),
+      });
+      const lookRight = normalize(cross(lookForward, worldUp));
+      const lookUp = normalize(cross(lookRight, lookForward));
+
+      if (forward) {
+        freeCameraPos.x += lookForward.x * flySpeed;
+        freeCameraPos.y += lookForward.y * flySpeed;
+        freeCameraPos.z += lookForward.z * flySpeed;
+      }
+      if (backward) {
+        freeCameraPos.x -= lookForward.x * flySpeed;
+        freeCameraPos.y -= lookForward.y * flySpeed;
+        freeCameraPos.z -= lookForward.z * flySpeed;
+      }
+      if (right) {
+        freeCameraPos.x += lookRight.x * flySpeed;
+        freeCameraPos.y += lookRight.y * flySpeed;
+        freeCameraPos.z += lookRight.z * flySpeed;
+      }
+      if (left) {
+        freeCameraPos.x -= lookRight.x * flySpeed;
+        freeCameraPos.y -= lookRight.y * flySpeed;
+        freeCameraPos.z -= lookRight.z * flySpeed;
+      }
+      if (jumpOrUp) {
+        freeCameraPos.x += lookUp.x * flySpeed;
+        freeCameraPos.y += lookUp.y * flySpeed;
+        freeCameraPos.z += lookUp.z * flySpeed;
+      }
+      if (down) {
+        freeCameraPos.x -= lookUp.x * flySpeed;
+        freeCameraPos.y -= lookUp.y * flySpeed;
+        freeCameraPos.z -= lookUp.z * flySpeed;
+      }
+
+      sunAngle += 0.004;
+      return;
+    }
 
     let moveLong = 0;
     let moveLat = 0;
@@ -390,36 +460,52 @@ export function createGameSession() {
       z: Math.cos(player.latitude) * Math.cos(player.longitude),
     });
 
-    const worldUp = playerNormal;
-    const east = normalize(cross({ x: 0, y: 1, z: 0 }, worldUp));
-    const north = normalize(cross(worldUp, east));
+    let camera;
+    if (cameraDetached) {
+      const globalUp = { x: 0, y: 1, z: 0 };
+      const forward = normalize({
+        x: Math.sin(lookYaw) * Math.cos(lookPitch),
+        y: Math.sin(lookPitch),
+        z: Math.cos(lookYaw) * Math.cos(lookPitch),
+      });
+      const right = normalize(cross(forward, globalUp));
+      const up = normalize(cross(right, forward));
+      camera = {
+        position: freeCameraPos,
+        forward,
+        right,
+        up,
+      };
+    } else {
+      const worldUp = playerNormal;
+      const east = normalize(cross({ x: 0, y: 1, z: 0 }, worldUp));
+      const north = normalize(cross(worldUp, east));
 
-    let cameraForward = north;
-    cameraForward = rotateY(cameraForward, lookYaw);
-    cameraForward = rotateX(cameraForward, lookPitch * 0.35);
-    cameraForward = normalize({
-      x: cameraForward.x + east.x * Math.sin(lookYaw),
-      y: cameraForward.y + east.y * Math.sin(lookYaw),
-      z: cameraForward.z + east.z * Math.sin(lookYaw),
-    });
+      let cameraForward = north;
+      cameraForward = rotateY(cameraForward, lookYaw);
+      cameraForward = rotateX(cameraForward, lookPitch * 0.35);
+      cameraForward = normalize({
+        x: cameraForward.x + east.x * Math.sin(lookYaw),
+        y: cameraForward.y + east.y * Math.sin(lookYaw),
+        z: cameraForward.z + east.z * Math.sin(lookYaw),
+      });
 
-    const cameraRight = normalize(cross(cameraForward, worldUp));
-    const cameraUp = normalize(cross(cameraRight, cameraForward));
-
-    const baseHexHeight = planetCells.find((cell) => !cell.isPentagon)?.tileHeight || 0.028;
-    const eyeHeight = baseHexHeight * PLAYER_HEIGHT_IN_HEXES + player.radialOffset * 0.05;
-    const detachedBoost = cameraDetached ? 1.35 : 0;
-    const viewDistance = eyeHeight + cameraZoom + detachedBoost;
-    const camera = {
-      position: {
-        x: playerNormal.x * (PLANET_OUTER_RADIUS + viewDistance),
-        y: playerNormal.y * (PLANET_OUTER_RADIUS + viewDistance),
-        z: playerNormal.z * (PLANET_OUTER_RADIUS + viewDistance),
-      },
-      forward: cameraForward,
-      right: cameraRight,
-      up: cameraUp,
-    };
+      const cameraRight = normalize(cross(cameraForward, worldUp));
+      const cameraUp = normalize(cross(cameraRight, cameraForward));
+      const baseHexHeight = planetCells.find((cell) => !cell.isPentagon)?.tileHeight || 0.028;
+      const eyeHeight = baseHexHeight * PLAYER_HEIGHT_IN_HEXES + player.radialOffset * 0.05;
+      const viewDistance = eyeHeight + cameraZoom;
+      camera = {
+        position: {
+          x: playerNormal.x * (PLANET_OUTER_RADIUS + viewDistance),
+          y: playerNormal.y * (PLANET_OUTER_RADIUS + viewDistance),
+          z: playerNormal.z * (PLANET_OUTER_RADIUS + viewDistance),
+        },
+        forward: cameraForward,
+        right: cameraRight,
+        up: cameraUp,
+      };
+    }
 
     const drawQueue = [];
     for (const cell of planetCells) {
@@ -430,7 +516,7 @@ export function createGameSession() {
       };
       const depth = dot(toCell, camera.forward);
       if (depth <= 0.12) continue;
-      const globeVisibilityCutoff = cameraZoom > 0.7 || cameraDetached ? -0.35 : 0.06;
+      const globeVisibilityCutoff = cameraDetached || cameraZoom > 0.7 ? -1 : 0.06;
       if (dot(cell.normal, playerNormal) < globeVisibilityCutoff) continue;
       drawQueue.push({ cell, depth });
     }
@@ -449,13 +535,11 @@ export function createGameSession() {
     ctx.lineTo(w * 0.5, h * 0.52 + 5);
     ctx.stroke();
 
-    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | ${cameraDetached ? "Fly-out cam" : "First-person"} | ${
+    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | ${cameraDetached ? "Free camera" : "First-person"} | ${
       world.topology.hexagonCells
     } hex + ${world.topology.pentagonCells} pent | Hollow core r=${PLANET_INNER_AIR_RADIUS.toFixed(
       2,
-    )} | W/S forward-back, A left, D right, Mouse look, P toggle fly-out, ${
-      world.mode === "creative" ? "Space/Shift fly" : "Space jump"
-    }`;
+    )} | W/S/A/D move, Mouse look, Space up, Shift down, P toggle camera`;
   }
 
   function tick() {
@@ -468,7 +552,23 @@ export function createGameSession() {
   function onKeyDown(event) {
     if (event.key.toLowerCase() === "p" && !event.repeat) {
       cameraDetached = !cameraDetached;
-      cameraZoom = cameraDetached ? Math.max(cameraZoom, 0.9) : Math.min(cameraZoom, 0.3);
+      if (cameraDetached) {
+        const baseHexHeight = planetCells.find((cell) => !cell.isPentagon)?.tileHeight || 0.028;
+        const eyeHeight = baseHexHeight * PLAYER_HEIGHT_IN_HEXES + player.radialOffset * 0.05;
+        const startDistance = PLANET_OUTER_RADIUS + eyeHeight + Math.max(cameraZoom, 0.25);
+        const playerNormal = normalize({
+          x: Math.cos(player.latitude) * Math.sin(player.longitude),
+          y: Math.sin(player.latitude),
+          z: Math.cos(player.latitude) * Math.cos(player.longitude),
+        });
+        freeCameraPos = {
+          x: playerNormal.x * startDistance,
+          y: playerNormal.y * startDistance,
+          z: playerNormal.z * startDistance,
+        };
+      } else {
+        cameraZoom = 0;
+      }
       return;
     }
     ACTIVE_KEYS.add(event.key.toLowerCase());
@@ -521,6 +621,7 @@ export function createGameSession() {
       lookPitch = 0;
       cameraZoom = 0;
       cameraDetached = false;
+      freeCameraPos = { x: 0, y: 0, z: 1.2 };
       sunAngle = 0;
       sessionRoot.classList.remove("hidden");
 
