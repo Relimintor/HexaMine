@@ -277,7 +277,7 @@ function getVoxelDensity(i, j, k, state, settingsPhysics) {
   if (override === "AIR") {
     return -1;
   }
-  if (override === "SOLID") {
+  if (override && override !== "AIR") {
     return 1;
   }
   const center = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
@@ -904,6 +904,7 @@ function bootWorld() {
     },
     modifiedDensity: new Map(),
     voxelOverrides: new Map(),
+    voxelTypes: new Map(),
     dirtyChunks: new Set(),
     chunkStates: new Map(),
   };
@@ -1030,7 +1031,9 @@ function bootWorld() {
 
     if (button === 0) {
       const [i, j, k] = hit.voxel;
-      state.voxelOverrides.set(voxelKey(i, j, k), "AIR");
+      const key = voxelKey(i, j, k);
+      state.voxelOverrides.set(key, "AIR");
+      state.voxelTypes.delete(key);
       markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
     }
 
@@ -1042,7 +1045,10 @@ function bootWorld() {
       const playerDistance = vecLength(vecSub(placePosition, state.player.position));
       if (playerDistance <= settingsPhysics.playerCollisionRadius) return;
       const [i, j, k] = worldToVoxelIndex(placePosition, settingsPhysics.voxelSize);
-      state.voxelOverrides.set(voxelKey(i, j, k), "SOLID");
+      const key = voxelKey(i, j, k);
+      const blockType = `BLOCK_SLOT_${state.selectedSlot}`;
+      state.voxelOverrides.set(key, blockType);
+      state.voxelTypes.set(key, blockType);
       markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
     }
   }
