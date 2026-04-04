@@ -34,6 +34,27 @@ function vecNormalize(v) {
   return vecScale(v, 1 / length);
 }
 
+function triangleCircumcenter(a, b, c, radius) {
+  const u = vecSub(b, a);
+  const v = vecSub(c, a);
+  const w = vecCross(u, v);
+  const denominator = 2 * vecDot(w, w);
+
+  if (denominator === 0) {
+    const centroid = vecScale(vecAdd(vecAdd(a, b), c), 1 / 3);
+    return vecScale(vecNormalize(centroid), radius);
+  }
+
+  const uLen2 = vecDot(u, u);
+  const vLen2 = vecDot(v, v);
+  const term1 = vecScale(vecCross(w, u), vLen2);
+  const term2 = vecScale(vecCross(v, w), uLen2);
+  const offset = vecScale(vecAdd(term1, term2), 1 / denominator);
+  const center = vecAdd(a, offset);
+
+  return vecScale(vecNormalize(center), radius);
+}
+
 function buildIcosahedron() {
   const phi = (1 + Math.sqrt(5)) / 2;
   const vertices = [
@@ -103,8 +124,12 @@ function subdivideMesh(mesh, subdivisions) {
 function buildDualTiles(mesh, radius) {
   const normalizedVertices = mesh.vertices.map((v) => vecScale(vecNormalize(v), radius));
   const faceCenters = mesh.faces.map(([a, b, c]) => {
-    const center = vecScale(vecAdd(vecAdd(normalizedVertices[a], normalizedVertices[b]), normalizedVertices[c]), 1 / 3);
-    return vecScale(vecNormalize(center), radius);
+    return triangleCircumcenter(
+      normalizedVertices[a],
+      normalizedVertices[b],
+      normalizedVertices[c],
+      radius,
+    );
   });
 
   const vertexFaces = Array.from({ length: normalizedVertices.length }, () => []);
