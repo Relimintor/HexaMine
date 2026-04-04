@@ -99,6 +99,111 @@ function vecNormalize(v) {
   return vecScale(v, 1 / length);
 }
 
+function gravityDownVector(position, center) {
+  return vecNormalize(vecSub(center, position));
+}
+
+function tangentForwardFromDirection(direction, up) {
+  const projected = vecSub(direction, vecScale(up, vecDot(direction, up)));
+  return vecLength(projected) > 0.0001 ? vecNormalize(projected) : [0, 0, 0];
+}
+
+function quatNormalize(q) {
+  const length = Math.sqrt((q[0] * q[0]) + (q[1] * q[1]) + (q[2] * q[2]) + (q[3] * q[3]));
+  if (!length) {
+    return [1, 0, 0, 0];
+  }
+  return [q[0] / length, q[1] / length, q[2] / length, q[3] / length];
+}
+
+function quatMultiply(a, b) {
+  const [aw, ax, ay, az] = a;
+  const [bw, bx, by, bz] = b;
+  return [
+    aw * bw - ax * bx - ay * by - az * bz,
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+  ];
+}
+
+function quatFromAxisAngle(axis, angle) {
+  const halfAngle = angle * 0.5;
+  const sinHalf = Math.sin(halfAngle);
+  const unitAxis = vecNormalize(axis);
+  return quatNormalize([
+    Math.cos(halfAngle),
+    unitAxis[0] * sinHalf,
+    unitAxis[1] * sinHalf,
+    unitAxis[2] * sinHalf,
+  ]);
+}
+
+function quatRotateVector(quat, vector) {
+  const qVector = [0, vector[0], vector[1], vector[2]];
+  const qConjugate = [quat[0], -quat[1], -quat[2], -quat[3]];
+  const rotated = quatMultiply(quatMultiply(quat, qVector), qConjugate);
+  return [rotated[1], rotated[2], rotated[3]];
+}
+
+function quatSlerp(a, b, t) {
+  let cosTheta = (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]) + (a[3] * b[3]);
+  let end = [...b];
+  if (cosTheta < 0) {
+    cosTheta = -cosTheta;
+    end = [-b[0], -b[1], -b[2], -b[3]];
+  }
+
+  if (cosTheta > 0.9995) {
+    return quatNormalize([
+      a[0] + ((end[0] - a[0]) * t),
+      a[1] + ((end[1] - a[1]) * t),
+      a[2] + ((end[2] - a[2]) * t),
+      a[3] + ((end[3] - a[3]) * t),
+    ]);
+  }
+
+  const theta = Math.acos(cosTheta);
+  const sinTheta = Math.sin(theta);
+  const w1 = Math.sin((1 - t) * theta) / sinTheta;
+  const w2 = Math.sin(t * theta) / sinTheta;
+  return quatNormalize([
+    (a[0] * w1) + (end[0] * w2),
+    (a[1] * w1) + (end[1] * w2),
+    (a[2] * w1) + (end[2] * w2),
+    (a[3] * w1) + (end[3] * w2),
+  ]);
+}
+
+function raycastSurfaceAlongGravity(position, gravityDir, center, targetRadius, maxDistance) {
+  const dir = vecNormalize(gravityDir);
+  const rel = vecSub(position, center);
+  const a = 1;
+  const b = 2 * vecDot(rel, dir);
+  const c = vecDot(rel, rel) - (targetRadius * targetRadius);
+  const discriminant = (b * b) - (4 * a * c);
+  if (discriminant < 0) {
+    return null;
+  }
+
+  const sqrtDiscriminant = Math.sqrt(discriminant);
+  const t1 = (-b - sqrtDiscriminant) / (2 * a);
+  const t2 = (-b + sqrtDiscriminant) / (2 * a);
+  const candidates = [t1, t2]
+    .filter((t) => t >= 0 && t <= maxDistance)
+    .sort((x, y) => x - y);
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  const t = candidates[0];
+  return {
+    t,
+    position: vecAdd(position, vecScale(dir, t)),
+  };
+}
+
 function triangleCircumcenter(a, b, c, radius) {
   const u = vecSub(b, a);
   const v = vecSub(c, a);
@@ -334,8 +439,8 @@ function buildTriangleNodeGraph(mesh, radius) {
   return nodes;
 }
 
-function buildDynamicGravityFrame(position) {
-  const up = vecNormalize(position);
+function buildDynamicGravityFrame(position, center = [0, 0, 0]) {
+  const up = vecNormalize(vecSub(position, center));
   const worldUp = Math.abs(up[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
   const surfaceRight = vecNormalize(vecCross(worldUp, up));
   const surfaceForward = vecNormalize(vecCross(up, surfaceRight));
@@ -357,14 +462,14 @@ function rotateAroundAxis(vector, axis, angle) {
   return vecAdd(vecAdd(term1, term2), term3);
 }
 
-function buildCameraBasis(position, moveForward, pitch) {
-  const frame = buildDynamicGravityFrame(position);
+function buildCameraBasis(position, moveForward, center = [0, 0, 0]) {
+  const frame = buildDynamicGravityFrame(position, center);
   const { up } = frame;
 
   const forwardFlatRaw = vecSub(moveForward, vecScale(up, vecDot(moveForward, up)));
   const forwardFlat = vecLength(forwardFlatRaw) > 0.0001 ? vecNormalize(forwardFlatRaw) : frame.surfaceForward;
   const right = vecNormalize(vecCross(forwardFlat, up));
-  const forward = vecNormalize(vecAdd(vecScale(forwardFlat, Math.cos(pitch)), vecScale(up, Math.sin(pitch))));
+  const forward = vecLength(moveForward) > 0.0001 ? vecNormalize(moveForward) : forwardFlat;
   const cameraUp = vecNormalize(vecCross(right, forward));
 
   return {
@@ -601,19 +706,23 @@ function bootWorld() {
     selectedSlot: 1,
     paused: false,
     turnDelta: 0,
-    pitch: 0,
+    pitchDelta: 0,
     moveForward: [1, 0, 0],
     player: {
       position: [0, 1.08, 0],
       velocity: [0, 0, 0],
       onGround: false,
+      rotation: [1, 0, 0, 0],
     },
   };
   renderHotbar(state.selectedSlot);
 
   const settingsPhysics = {
     planetRadius: 1,
-    playerHeight: 0.08,
+    planetCenter: [0, 0, 0],
+    hexHeight: 0.0444444444,
+    playerHeightHexes: 1.8,
+    groundProbeDistance: 0.12,
     gravity: 3.6,
     moveAccel: 6.2,
     jumpSpeed: 1.2,
@@ -691,31 +800,62 @@ function bootWorld() {
     if (!isLocked()) return;
     const sensitivity = 0.0025;
     state.turnDelta -= event.movementX * sensitivity;
-    state.pitch -= event.movementY * sensitivity;
-    state.pitch = Math.max(-1.35, Math.min(1.35, state.pitch));
+    state.pitchDelta -= event.movementY * sensitivity;
   });
 
   function updatePlayer(dt) {
-    const up = vecNormalize(state.player.position);
-    if (Math.abs(state.turnDelta) > 0.00001) {
-      state.moveForward = rotateAroundAxis(state.moveForward, up, state.turnDelta);
+    const radialFromCenter = vecSub(state.player.position, settingsPhysics.planetCenter);
+    const up = vecNormalize(radialFromCenter);
+    const gravityDown = gravityDownVector(state.player.position, settingsPhysics.planetCenter);
+    if (Math.abs(state.turnDelta) > 0.00001 || Math.abs(state.pitchDelta) > 0.00001) {
+      if (Math.abs(state.turnDelta) > 0.00001) {
+        const yawQuat = quatFromAxisAngle(up, state.turnDelta);
+        state.moveForward = vecNormalize(quatRotateVector(yawQuat, state.moveForward));
+      }
+
+      const yawBasis = buildCameraBasis(
+        state.player.position,
+        state.moveForward,
+        settingsPhysics.planetCenter,
+      );
+
+      if (Math.abs(state.pitchDelta) > 0.00001) {
+        const pitchQuat = quatFromAxisAngle(yawBasis.right, state.pitchDelta);
+        const pitchedForward = vecNormalize(quatRotateVector(pitchQuat, state.moveForward));
+        const pitchLimit = Math.sin(1.35);
+        const verticalComponent = vecDot(pitchedForward, up);
+        if (Math.abs(verticalComponent) <= pitchLimit) {
+          state.moveForward = pitchedForward;
+        }
+      }
+
       state.turnDelta = 0;
+      state.pitchDelta = 0;
     }
 
-    const basis = buildCameraBasis(state.player.position, state.moveForward, 0);
+    const basis = buildCameraBasis(
+      state.player.position,
+      state.moveForward,
+      settingsPhysics.planetCenter,
+    );
+    const tangentForward = tangentForwardFromDirection(basis.forward, up);
+    const tangentRight = vecNormalize(vecCross(tangentForward, up));
     let move = [0, 0, 0];
 
-    if (state.keys.w) move = vecAdd(move, basis.forwardFlat);
-    if (state.keys.s) move = vecSub(move, basis.forwardFlat);
-    if (state.keys.d) move = vecAdd(move, basis.right);
-    if (state.keys.a) move = vecSub(move, basis.right);
+    if (state.keys.w) move = vecAdd(move, tangentForward);
+    if (state.keys.s) move = vecSub(move, tangentForward);
+    if (state.keys.d) move = vecAdd(move, tangentRight);
+    if (state.keys.a) move = vecSub(move, tangentRight);
 
     if (vecLength(move) > 0) {
       move = vecNormalize(move);
       state.player.velocity = vecAdd(state.player.velocity, vecScale(move, settingsPhysics.moveAccel * dt));
     }
 
-    state.player.velocity = vecAdd(state.player.velocity, vecScale(up, -settingsPhysics.gravity * dt));
+    state.player.velocity = vecAdd(
+      state.player.velocity,
+      vecScale(gravityDown, settingsPhysics.gravity * dt),
+    );
 
     if (state.keys.space && state.player.onGround) {
       state.player.velocity = vecAdd(state.player.velocity, vecScale(up, settingsPhysics.jumpSpeed));
@@ -730,11 +870,19 @@ function bootWorld() {
     }
     state.player.position = nextPosition;
 
-    const distance = vecLength(state.player.position);
-    const targetDistance = settingsPhysics.planetRadius + settingsPhysics.playerHeight;
-    if (distance <= targetDistance) {
-      const correctedUp = vecNormalize(state.player.position);
-      state.player.position = vecScale(correctedUp, targetDistance);
+    const playerHeight = settingsPhysics.hexHeight * settingsPhysics.playerHeightHexes;
+    const targetDistance = settingsPhysics.planetRadius + playerHeight;
+    const groundHit = raycastSurfaceAlongGravity(
+      state.player.position,
+      gravityDown,
+      settingsPhysics.planetCenter,
+      targetDistance,
+      settingsPhysics.groundProbeDistance,
+    );
+
+    if (groundHit) {
+      state.player.position = groundHit.position;
+      const correctedUp = vecNormalize(vecSub(state.player.position, settingsPhysics.planetCenter));
       const inwardSpeed = vecDot(state.player.velocity, correctedUp);
       if (inwardSpeed < 0) {
         state.player.velocity = vecSub(state.player.velocity, vecScale(correctedUp, inwardSpeed));
@@ -744,7 +892,20 @@ function bootWorld() {
       state.player.onGround = false;
     }
 
-    const radial = vecNormalize(state.player.position);
+    const radial = vecNormalize(vecSub(state.player.position, settingsPhysics.planetCenter));
+    const oldUp = up;
+    const newUp = radial;
+    const axis = vecCross(oldUp, newUp);
+    const axisLength = vecLength(axis);
+    const dot = Math.max(-1, Math.min(1, vecDot(oldUp, newUp)));
+    if (axisLength > 0.000001 && dot < 0.999999) {
+      const angle = Math.acos(dot);
+      const deltaRotation = quatFromAxisAngle(axis, angle);
+      const targetRotation = quatNormalize(quatMultiply(deltaRotation, state.player.rotation));
+      const smoothing = Math.min(1, dt * 20);
+      state.player.rotation = quatSlerp(state.player.rotation, targetRotation, smoothing);
+    }
+
     const radialComponent = vecScale(radial, vecDot(state.player.velocity, radial));
     const tangential = vecSub(state.player.velocity, radialComponent);
     state.player.velocity = vecAdd(radialComponent, vecScale(tangential, settingsPhysics.damping));
@@ -765,7 +926,11 @@ function bootWorld() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const basis = buildCameraBasis(state.player.position, state.moveForward, state.pitch);
+    const basis = buildCameraBasis(
+      state.player.position,
+      state.moveForward,
+      settingsPhysics.planetCenter,
+    );
     const camera = {
       position: vecAdd(state.player.position, vecScale(basis.up, 0.02)),
       forward: basis.forward,
