@@ -279,8 +279,8 @@ function buildPlanetCells(topology) {
     return acc + sum / Math.max(1, cell.corners.length);
   }, 0) / Math.max(1, cells.length);
 
-  const tileRadius = clamp(avgCornerDistance * 0.62, 0.018, 0.08);
-  const tileHeight = clamp(tileRadius * 0.46, 0.01, 0.032);
+  const tileRadius = clamp(avgCornerDistance * 0.72, 0.02, 0.1);
+  const tileHeight = clamp(tileRadius * 0.62, 0.014, 0.05);
   for (const cell of cells) {
     cell.tileRadius = tileRadius;
     cell.tileHeight = cell.isPentagon ? tileHeight * 1.1 : tileHeight;
@@ -307,6 +307,25 @@ function projectPoint(point, camera, width, height, focal) {
     x: width * 0.5 + (view.x / view.z) * focal,
     y: height * 0.56 - (view.y / view.z) * focal,
     z: view.z,
+  };
+}
+
+function projectPointClamped(point, camera, width, height, focal) {
+  const rel = {
+    x: point.x - camera.position.x,
+    y: point.y - camera.position.y,
+    z: point.z - camera.position.z,
+  };
+  const view = {
+    x: dot(rel, camera.right),
+    y: dot(rel, camera.up),
+    z: dot(rel, camera.forward),
+  };
+  const safeZ = Math.max(view.z, 0.08);
+  return {
+    x: width * 0.5 + (view.x / safeZ) * focal,
+    y: height * 0.56 - (view.y / safeZ) * focal,
+    z: safeZ,
   };
 }
 
@@ -495,9 +514,11 @@ export function createGameSession() {
       });
     }
 
-    const projectedTop = topPoints.map((p) => projectPoint(p, camera, w, h, focal));
-    const projectedBottom = bottomPoints.map((p) => projectPoint(p, camera, w, h, focal));
-    if (projectedTop.some((p) => !p) || projectedBottom.some((p) => !p)) return;
+    const topVisible = topPoints.some((p) => projectPoint(p, camera, w, h, focal));
+    const bottomVisible = bottomPoints.some((p) => projectPoint(p, camera, w, h, focal));
+    if (!topVisible && !bottomVisible) return;
+    const projectedTop = topPoints.map((p) => projectPointClamped(p, camera, w, h, focal));
+    const projectedBottom = bottomPoints.map((p) => projectPointClamped(p, camera, w, h, focal));
 
     const brightness = clamp((dot(cell.normal, sunVector) + 1) * 0.5, 0.16, 1);
     const sideTint = cell.isPentagon ? [142, 112, 76] : [124, 96, 68];
@@ -587,7 +608,15 @@ export function createGameSession() {
         up,
       };
     } else {
-      const worldUp = playerNormal;
+      let worldUp = playerNormal;
+      let bestUpAlignment = -Infinity;
+      for (const cell of planetCells) {
+        const alignment = dot(cell.normal, playerNormal);
+        if (alignment > bestUpAlignment) {
+          bestUpAlignment = alignment;
+          worldUp = cell.normal;
+        }
+      }
       const east = normalize(cross({ x: 0, y: 1, z: 0 }, worldUp));
       const north = normalize(cross(worldUp, east));
 
