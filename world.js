@@ -334,11 +334,22 @@ function buildTriangleNodeGraph(mesh, radius) {
   return nodes;
 }
 
-function buildCameraBasis(position, yaw, pitch) {
+function buildDynamicGravityFrame(position) {
   const up = vecNormalize(position);
   const worldUp = Math.abs(up[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
   const surfaceRight = vecNormalize(vecCross(worldUp, up));
   const surfaceForward = vecNormalize(vecCross(up, surfaceRight));
+
+  return {
+    up,
+    surfaceRight,
+    surfaceForward,
+  };
+}
+
+function buildCameraBasis(position, yaw, pitch) {
+  const frame = buildDynamicGravityFrame(position);
+  const { up, surfaceRight, surfaceForward } = frame;
 
   const yawForward = vecNormalize(vecAdd(vecScale(surfaceForward, Math.cos(yaw)), vecScale(surfaceRight, Math.sin(yaw))));
   const yawRight = vecNormalize(vecCross(yawForward, up));
@@ -558,8 +569,8 @@ function bootWorld() {
 
   document.addEventListener("pointerlockchange", () => {
     hud.textContent = isLocked()
-      ? "Pointer locked • WASD move • Space jump • Mouse look"
-      : "Click to lock cursor • WASD move • Space jump";
+      ? "Pointer locked • FPS movement + dynamic gravity frame • Space jump • Mouse look"
+      : "Click to lock cursor • FPS movement + dynamic gravity frame";
   });
 
   document.addEventListener("mousemove", (event) => {

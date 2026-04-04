@@ -44,3 +44,6 @@ The viewer organizes runtime data as:
 - `geometry` → local per-tile frames (`center`, `normal`, `tangent`, `bitangent`)
 - `volumetric` → per-tile voxel field containers
 - `meshing` → visible triangle connectivity for rendering
+
+Movement model:
+`movement = standard FPS controller + dynamic gravity frame`.
