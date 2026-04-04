@@ -1,6 +1,7 @@
 # Hexes
 
 - `config.js`: central config/registry for all hex blocks and shared terrain defaults.
+- `hex.js`: default block catalog (grass/dirt/stone/sand/etc) registered into `HEX_CONFIG`.
 - `hex-types/regular-hex/`: standard 6-neighbor tiles.
 - `hex-types/pentagon/`: 5-neighbor defect tiles.
 - `hex-types/edge-hex/`: optional edge/trim tiles.
