@@ -241,9 +241,88 @@ function worldToChunkVoxel(position, tiles, settingsPhysics) {
   const voxel = worldToVoxelIndex(local, settingsPhysics.voxelSize);
   return {
     tileID: tile.id,
+    tile,
     local,
     voxel,
   };
+}
+
+function transferToNeighborChunk(position, mapping, tileById, settingsPhysics) {
+  const chunkSize = settingsPhysics.chunkSize;
+  const [i, j, k] = mapping.voxel;
+  const inBounds = (
+    i >= 0 && i < chunkSize
+    && j >= 0 && j < chunkSize
+    && k >= 0 && k < chunkSize
+  );
+  if (inBounds) {
+    return mapping;
+  }
+
+  let bestNeighbor = null;
+  let bestAlignment = -Infinity;
+  const radial = vecNormalize(vecSub(position, settingsPhysics.planetCenter));
+  mapping.tile.neighbors.forEach((neighborId) => {
+    const neighborTile = tileById.get(neighborId);
+    if (!neighborTile) return;
+    const alignment = vecDot(neighborTile.normal, radial);
+    if (alignment > bestAlignment) {
+      bestAlignment = alignment;
+      bestNeighbor = neighborTile;
+    }
+  });
+
+  if (!bestNeighbor) {
+    return mapping;
+  }
+
+  const rel = vecSub(position, bestNeighbor.center);
+  const local = [
+    vecDot(rel, bestNeighbor.tangent),
+    vecDot(rel, bestNeighbor.bitangent),
+    vecDot(rel, bestNeighbor.normal),
+  ];
+  const voxel = worldToVoxelIndex(local, settingsPhysics.voxelSize);
+  return {
+    tileID: bestNeighbor.id,
+    tile: bestNeighbor,
+    local,
+    voxel,
+  };
+}
+
+function resolveChunkOwnership(position, mapping, tileById, settingsPhysics) {
+  let current = mapping;
+  for (let step = 0; step < 6; step += 1) {
+    const next = transferToNeighborChunk(position, current, tileById, settingsPhysics);
+    if (next.tileID === current.tileID && next.voxel[0] === current.voxel[0]
+      && next.voxel[1] === current.voxel[1] && next.voxel[2] === current.voxel[2]) {
+      return current;
+    }
+    current = next;
+    const [i, j, k] = current.voxel;
+    const chunkSize = settingsPhysics.chunkSize;
+    if (i >= 0 && i < chunkSize && j >= 0 && j < chunkSize && k >= 0 && k < chunkSize) {
+      return current;
+    }
+  }
+  return current;
+}
+
+function buildTileLookup(tiles) {
+  const byId = new Map();
+  tiles.forEach((tile) => {
+    byId.set(tile.id, tile);
+  });
+  return byId;
+}
+
+function mapWorldToOwnedChunkVoxel(position, tiles, tileById, settingsPhysics) {
+  const initial = worldToChunkVoxel(position, tiles, settingsPhysics);
+  if (!initial) {
+    return null;
+  }
+  return resolveChunkOwnership(position, initial, tileById, settingsPhysics);
 }
 
 function voxelKey(i, j, k) {
@@ -291,8 +370,8 @@ function isSolidAtWorld(position, state, settingsPhysics) {
   return getVoxelDensity(i, j, k, state, settingsPhysics) > 0;
 }
 
-function markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics) {
-  const mapping = worldToChunkVoxel(worldPosition, tiles, settingsPhysics);
+function markDirtyChunkForVoxel(worldPosition, tiles, tileById, state, settingsPhysics) {
+  const mapping = mapWorldToOwnedChunkVoxel(worldPosition, tiles, tileById, settingsPhysics);
   if (!mapping) {
     return;
   }
@@ -304,9 +383,9 @@ function markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics) {
   state.dirtyChunks.add(`${mapping.tileID}:${voxelKey(cx, cy, cz)}`);
 }
 
-function markDirtyChunkByVoxelIndex(i, j, k, tiles, state, settingsPhysics) {
+function markDirtyChunkByVoxelIndex(i, j, k, tiles, tileById, state, settingsPhysics) {
   const worldPosition = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
-  markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics);
+  markDirtyChunkForVoxel(worldPosition, tiles, tileById, state, settingsPhysics);
 }
 
 function processDirtyChunkRemesh(state) {
@@ -321,7 +400,7 @@ function processDirtyChunkRemesh(state) {
   state.dirtyChunks.clear();
 }
 
-function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics, tiles) {
+function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics, tiles, tileById) {
   const s = settingsPhysics.voxelSize;
   const minIndex = worldToVoxelIndex(vecSub(center, [radius, radius, radius]), s);
   const maxIndex = worldToVoxelIndex(vecAdd(center, [radius, radius, radius]), s);
@@ -336,7 +415,7 @@ function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysic
         const delta = strengthSign * settingsPhysics.editStrength * falloff;
         const key = voxelKey(i, j, k);
         state.modifiedDensity.set(key, (state.modifiedDensity.get(key) || 0) + delta);
-        markDirtyChunkForVoxel(voxelCenter, tiles, state, settingsPhysics);
+        markDirtyChunkForVoxel(voxelCenter, tiles, tileById, state, settingsPhysics);
       }
     }
   }
@@ -855,6 +934,7 @@ function bootWorld() {
   const mesh = subdivideMesh(baseMesh, subdivisions);
   const tiles = buildDualTiles(mesh, 1);
   const worldModel = buildWorldModel(mesh, tiles);
+  const tileById = buildTileLookup(worldModel.topology.tiles);
   const topology = validateTopology(mesh, tiles);
   topology.triangleNodeCount = worldModel.topology.triangleNodes.length;
 
@@ -1034,7 +1114,7 @@ function bootWorld() {
       const key = voxelKey(i, j, k);
       state.voxelOverrides.set(key, "AIR");
       state.voxelTypes.delete(key);
-      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
+      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, tileById, state, settingsPhysics);
     }
 
     if (button === 2) {
@@ -1049,7 +1129,7 @@ function bootWorld() {
       const blockType = `BLOCK_SLOT_${state.selectedSlot}`;
       state.voxelOverrides.set(key, blockType);
       state.voxelTypes.set(key, blockType);
-      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, state, settingsPhysics);
+      markDirtyChunkByVoxelIndex(i, j, k, worldModel.topology.tiles, tileById, state, settingsPhysics);
     }
   }
 
