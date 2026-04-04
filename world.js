@@ -2,6 +2,35 @@ function vecAdd(a, b) {
   return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
 
+function getHexConfig() {
+  const fallback = {
+    hexTypes: {
+      REGULAR: "regular-hex",
+      PENTAGON: "pentagon",
+      EDGE: "edge-hex",
+      CITY: "cities",
+    },
+    blocks: {
+      "regular-hex": [],
+      pentagon: [],
+      "edge-hex": [],
+      cities: [],
+    },
+    terrain: {
+      defaultBiome: "grassland",
+      elevationRange: { min: -1, max: 1 },
+      fluidTypes: [],
+      resourceTypes: [],
+    },
+  };
+
+  if (typeof window !== "undefined" && window.HEX_CONFIG) {
+    return window.HEX_CONFIG;
+  }
+
+  return fallback;
+}
+
 function vecScale(v, s) {
   return [v[0] * s, v[1] * s, v[2] * s];
 }
@@ -122,6 +151,8 @@ function subdivideMesh(mesh, subdivisions) {
 }
 
 function buildDualTiles(mesh, radius) {
+  const hexConfig = getHexConfig();
+  const cityTileIds = new Set((hexConfig.blocks[hexConfig.hexTypes.CITY] || []).map((block) => block.id));
   const normalizedVertices = mesh.vertices.map((v) => vecScale(vecNormalize(v), radius));
   const faceCenters = mesh.faces.map(([a, b, c]) => {
     return triangleCircumcenter(
@@ -166,12 +197,25 @@ function buildDualTiles(mesh, radius) {
       });
 
     const neighbors = [...vertexNeighbors[vertexIndex]];
+    const isPentagon = neighbors.length === 5;
+    const type = isPentagon ? hexConfig.hexTypes.PENTAGON : hexConfig.hexTypes.REGULAR;
+    const feature = cityTileIds.has(vertexIndex) ? "city" : null;
 
     return {
+      id: vertexIndex,
       center,
       corners,
       neighbors,
-      isPentagon: neighbors.length === 5,
+      type,
+      isPentagon,
+      biome: hexConfig.terrain.defaultBiome,
+      elevation: 0,
+      feature,
+      hiddenLayers: {
+        subTerrain: [],
+        fluid: [...hexConfig.terrain.fluidTypes],
+        resources: [...hexConfig.terrain.resourceTypes],
+      },
     };
   });
 
