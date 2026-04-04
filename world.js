@@ -204,25 +204,6 @@ function raycastSurfaceAlongGravity(position, gravityDir, center, targetRadius, 
   };
 }
 
-function raySphereIntersection(origin, direction, center, radius) {
-  const dir = vecNormalize(direction);
-  const rel = vecSub(origin, center);
-  const b = 2 * vecDot(rel, dir);
-  const c = vecDot(rel, rel) - (radius * radius);
-  const discriminant = (b * b) - (4 * c);
-  if (discriminant < 0) {
-    return null;
-  }
-  const sqrtDiscriminant = Math.sqrt(discriminant);
-  const tNear = (-b - sqrtDiscriminant) / 2;
-  const tFar = (-b + sqrtDiscriminant) / 2;
-  const t = tNear >= 0 ? tNear : tFar >= 0 ? tFar : null;
-  if (t === null) {
-    return null;
-  }
-  return vecAdd(origin, vecScale(dir, t));
-}
-
 function worldToVoxelIndex(position, voxelSize) {
   return [
     Math.floor(position[0] / voxelSize),
@@ -296,6 +277,56 @@ function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysic
       }
     }
   }
+}
+
+function raycastDensityField(origin, direction, maxDistance, state, settingsPhysics) {
+  const s = settingsPhysics.voxelSize;
+  const dir = vecNormalize(direction);
+  let [ix, iy, iz] = worldToVoxelIndex(origin, s);
+  const stepX = dir[0] >= 0 ? 1 : -1;
+  const stepY = dir[1] >= 0 ? 1 : -1;
+  const stepZ = dir[2] >= 0 ? 1 : -1;
+
+  const nextBoundaryX = (ix + (stepX > 0 ? 1 : 0)) * s;
+  const nextBoundaryY = (iy + (stepY > 0 ? 1 : 0)) * s;
+  const nextBoundaryZ = (iz + (stepZ > 0 ? 1 : 0)) * s;
+
+  let tMaxX = dir[0] !== 0 ? (nextBoundaryX - origin[0]) / dir[0] : Infinity;
+  let tMaxY = dir[1] !== 0 ? (nextBoundaryY - origin[1]) / dir[1] : Infinity;
+  let tMaxZ = dir[2] !== 0 ? (nextBoundaryZ - origin[2]) / dir[2] : Infinity;
+  const tDeltaX = dir[0] !== 0 ? s / Math.abs(dir[0]) : Infinity;
+  const tDeltaY = dir[1] !== 0 ? s / Math.abs(dir[1]) : Infinity;
+  const tDeltaZ = dir[2] !== 0 ? s / Math.abs(dir[2]) : Infinity;
+
+  let t = 0;
+  let hitNormal = [0, 0, 0];
+  while (t <= maxDistance) {
+    if (getVoxelDensity(ix, iy, iz, state, settingsPhysics) > 0) {
+      return {
+        position: vecAdd(origin, vecScale(dir, t)),
+        voxel: [ix, iy, iz],
+        normal: hitNormal,
+      };
+    }
+
+    if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+      ix += stepX;
+      t = tMaxX;
+      tMaxX += tDeltaX;
+      hitNormal = [-stepX, 0, 0];
+    } else if (tMaxY < tMaxZ) {
+      iy += stepY;
+      t = tMaxY;
+      tMaxY += tDeltaY;
+      hitNormal = [0, -stepY, 0];
+    } else {
+      iz += stepZ;
+      t = tMaxZ;
+      tMaxZ += tDeltaZ;
+      hitNormal = [0, 0, -stepZ];
+    }
+  }
+  return null;
 }
 
 function triangleCircumcenter(a, b, c, radius) {
@@ -825,6 +856,7 @@ function bootWorld() {
     terrainFrequency: 3.8,
     editBrushRadius: 0.08,
     editStrength: 0.32,
+    editReach: 3.5,
     placeOffsetScale: 0.5,
     playerCollisionRadius: 0.06,
     gravity: 3.6,
@@ -918,15 +950,18 @@ function bootWorld() {
       settingsPhysics.planetCenter,
     );
     const cameraPosition = vecAdd(state.player.position, vecScale(basis.up, 0.02));
-    const hitPosition = raySphereIntersection(
+    const hit = raycastDensityField(
       cameraPosition,
       basis.forward,
-      settingsPhysics.planetCenter,
-      settingsPhysics.planetRadius + settingsPhysics.terrainAmplitude,
+      settingsPhysics.editReach,
+      state,
+      settingsPhysics,
     );
-    if (!hitPosition) return;
-
-    const hitNormal = vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
+    if (!hit) return;
+    const hitPosition = hit.position;
+    const hitNormal = vecLength(hit.normal) > 0.0001
+      ? vecNormalize(hit.normal)
+      : vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
 
     if (button === 0) {
       modifyDensitySphere(hitPosition, settingsPhysics.editBrushRadius, -1, state, settingsPhysics);
