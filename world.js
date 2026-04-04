@@ -212,6 +212,40 @@ function worldToVoxelIndex(position, voxelSize) {
   ];
 }
 
+function findClosestTile(position, tiles, planetCenter) {
+  const radial = vecNormalize(vecSub(position, planetCenter));
+  let bestTile = tiles[0] || null;
+  let bestAlignment = -Infinity;
+  for (let i = 0; i < tiles.length; i += 1) {
+    const tile = tiles[i];
+    const alignment = vecDot(tile.normal, radial);
+    if (alignment > bestAlignment) {
+      bestAlignment = alignment;
+      bestTile = tile;
+    }
+  }
+  return bestTile;
+}
+
+function worldToChunkVoxel(position, tiles, settingsPhysics) {
+  const tile = findClosestTile(position, tiles, settingsPhysics.planetCenter);
+  if (!tile) {
+    return null;
+  }
+  const rel = vecSub(position, tile.center);
+  const local = [
+    vecDot(rel, tile.tangent),
+    vecDot(rel, tile.bitangent),
+    vecDot(rel, tile.normal),
+  ];
+  const voxel = worldToVoxelIndex(local, settingsPhysics.voxelSize);
+  return {
+    tileID: tile.id,
+    local,
+    voxel,
+  };
+}
+
 function voxelKey(i, j, k) {
   return `${i},${j},${k}`;
 }
@@ -250,15 +284,20 @@ function isSolidAtWorld(position, state, settingsPhysics) {
   return getVoxelDensity(i, j, k, state, settingsPhysics) > 0;
 }
 
-function markDirtyChunkForVoxel(i, j, k, state, settingsPhysics) {
+function markDirtyChunkForVoxel(worldPosition, tiles, state, settingsPhysics) {
+  const mapping = worldToChunkVoxel(worldPosition, tiles, settingsPhysics);
+  if (!mapping) {
+    return;
+  }
   const chunkSize = settingsPhysics.chunkSize;
+  const [i, j, k] = mapping.voxel;
   const cx = Math.floor(i / chunkSize);
   const cy = Math.floor(j / chunkSize);
   const cz = Math.floor(k / chunkSize);
-  state.dirtyChunks.add(voxelKey(cx, cy, cz));
+  state.dirtyChunks.add(`${mapping.tileID}:${voxelKey(cx, cy, cz)}`);
 }
 
-function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics) {
+function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics, tiles) {
   const s = settingsPhysics.voxelSize;
   const minIndex = worldToVoxelIndex(vecSub(center, [radius, radius, radius]), s);
   const maxIndex = worldToVoxelIndex(vecAdd(center, [radius, radius, radius]), s);
@@ -273,7 +312,7 @@ function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysic
         const delta = strengthSign * settingsPhysics.editStrength * falloff;
         const key = voxelKey(i, j, k);
         state.modifiedDensity.set(key, (state.modifiedDensity.get(key) || 0) + delta);
-        markDirtyChunkForVoxel(i, j, k, state, settingsPhysics);
+        markDirtyChunkForVoxel(voxelCenter, tiles, state, settingsPhysics);
       }
     }
   }
@@ -964,7 +1003,14 @@ function bootWorld() {
       : vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
 
     if (button === 0) {
-      modifyDensitySphere(hitPosition, settingsPhysics.editBrushRadius, -1, state, settingsPhysics);
+      modifyDensitySphere(
+        hitPosition,
+        settingsPhysics.editBrushRadius,
+        -1,
+        state,
+        settingsPhysics,
+        worldModel.topology.tiles,
+      );
     }
 
     if (button === 2) {
@@ -974,7 +1020,14 @@ function bootWorld() {
       );
       const playerDistance = vecLength(vecSub(placePosition, state.player.position));
       if (playerDistance <= settingsPhysics.playerCollisionRadius) return;
-      modifyDensitySphere(placePosition, settingsPhysics.editBrushRadius, 1, state, settingsPhysics);
+      modifyDensitySphere(
+        placePosition,
+        settingsPhysics.editBrushRadius,
+        1,
+        state,
+        settingsPhysics,
+        worldModel.topology.tiles,
+      );
     }
   }
 
