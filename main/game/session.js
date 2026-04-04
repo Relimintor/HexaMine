@@ -353,7 +353,7 @@ function projectPointClamped(point, camera, width, height, focal) {
 
 export function createGameSession() {
   const PLAYER_HEIGHT_IN_HEXES = 2;
-  const PLANET_OUTER_RADIUS = 1;
+  const PLANET_OUTER_RADIUS = 1.12;
   const PLANET_INNER_AIR_RADIUS = 0.7;
   const sessionRoot = document.querySelector("#game-session");
   const canvas = document.querySelector("#game-canvas");
@@ -496,29 +496,6 @@ export function createGameSession() {
     });
   }
 
-  function drawDistantPlanets(width, height) {
-    const planets = [
-      { x: width * 0.16, y: height * 0.22, radius: Math.max(10, Math.min(width, height) * 0.038), color: "#9fc3ff", glow: "rgba(159,195,255,0.35)" },
-      { x: width * 0.83, y: height * 0.2, radius: Math.max(8, Math.min(width, height) * 0.03), color: "#f7d7a6", glow: "rgba(247,215,166,0.32)" },
-      { x: width * 0.73, y: height * 0.34, radius: Math.max(6, Math.min(width, height) * 0.024), color: "#d5b5ff", glow: "rgba(213,181,255,0.28)" },
-    ];
-
-    for (const body of planets) {
-      const halo = ctx.createRadialGradient(body.x, body.y, body.radius * 0.6, body.x, body.y, body.radius * 3.2);
-      halo.addColorStop(0, body.glow);
-      halo.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = halo;
-      ctx.beginPath();
-      ctx.arc(body.x, body.y, body.radius * 3.2, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = body.color;
-      ctx.beginPath();
-      ctx.arc(body.x, body.y, body.radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
   function drawPlayerBody(camera, playerNormal) {
     const bodyHeight = 0.16;
     const shoulderRadius = 0.036;
@@ -564,24 +541,12 @@ export function createGameSession() {
   }
 
   function drawSky(width, height, sunX, sunY) {
-    const bg = ctx.createLinearGradient(0, 0, 0, height);
-    bg.addColorStop(0, "#85ade3");
-    bg.addColorStop(0.55, "#a8cbf4");
-    bg.addColorStop(1, "#e9f5ff");
-    ctx.fillStyle = bg;
+    ctx.fillStyle = "#9bc2f2";
     ctx.fillRect(0, 0, width, height);
 
-    const sunGlow = ctx.createRadialGradient(sunX, sunY, 12, sunX, sunY, 220);
-    sunGlow.addColorStop(0, "rgba(255,255,235,0.96)");
-    sunGlow.addColorStop(1, "rgba(255,244,188,0)");
-    ctx.fillStyle = sunGlow;
+    ctx.fillStyle = "#fff2be";
     ctx.beginPath();
-    ctx.arc(sunX, sunY, 120, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#fffef0";
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, 14, 0, Math.PI * 2);
+    ctx.arc(sunX, sunY, 16, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -602,10 +567,11 @@ export function createGameSession() {
     const bottomPoints = [];
 
     for (const corner of cell.corners) {
+      const topScale = PLANET_OUTER_RADIUS + cell.tileHeight + 0.006;
       topPoints.push({
-        x: corner.x * (PLANET_OUTER_RADIUS + cell.tileHeight),
-        y: corner.y * (PLANET_OUTER_RADIUS + cell.tileHeight),
-        z: corner.z * (PLANET_OUTER_RADIUS + cell.tileHeight),
+        x: corner.x * topScale,
+        y: corner.y * topScale,
+        z: corner.z * topScale,
       });
 
       bottomPoints.push({
