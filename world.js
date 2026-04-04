@@ -774,7 +774,9 @@ function bootWorld() {
     };
 
     const polygons = worldModel.topology.tiles.map((tile) => {
-      const projected = tile.corners
+      const topCorners = tile.corners;
+      const bottomCorners = tile.corners.map((corner) => vecScale(corner, 0.93));
+      const projected = topCorners
         .map((corner) => cameraProject(corner, camera, canvas))
         .filter(Boolean);
       if (projected.length < 3) {
@@ -785,6 +787,8 @@ function bootWorld() {
       return {
         tile,
         projected,
+        topCorners,
+        bottomCorners,
         zAverage,
       };
     }).filter(Boolean);
@@ -792,7 +796,30 @@ function bootWorld() {
     polygons
       .sort((a, b) => b.zAverage - a.zAverage)
       .forEach((polygon) => {
-        const shade = Math.max(0.25, Math.min(1, polygon.zAverage / 2.8));
+        const sideShade = Math.max(0.22, Math.min(0.75, polygon.zAverage / 3.4));
+
+        for (let i = 0; i < polygon.topCorners.length; i += 1) {
+          const next = (i + 1) % polygon.topCorners.length;
+          const t1 = cameraProject(polygon.topCorners[i], camera, canvas);
+          const t2 = cameraProject(polygon.topCorners[next], camera, canvas);
+          const b1 = cameraProject(polygon.bottomCorners[i], camera, canvas);
+          const b2 = cameraProject(polygon.bottomCorners[next], camera, canvas);
+
+          if (!t1 || !t2 || !b1 || !b2) {
+            continue;
+          }
+
+          ctx.beginPath();
+          ctx.moveTo(t1.x, t1.y);
+          ctx.lineTo(t2.x, t2.y);
+          ctx.lineTo(b2.x, b2.y);
+          ctx.lineTo(b1.x, b1.y);
+          ctx.closePath();
+          ctx.fillStyle = `rgba(106, 74, 45, ${sideShade})`;
+          ctx.fill();
+        }
+
+        const topShade = Math.max(0.45, Math.min(1, polygon.zAverage / 2.6));
         ctx.beginPath();
         polygon.projected.forEach((point, index) => {
           if (index === 0) {
@@ -803,14 +830,12 @@ function bootWorld() {
         });
         ctx.closePath();
 
-        if (polygon.tile.isPentagon) {
-          ctx.fillStyle = `rgba(252, 201, 92, ${shade})`;
-        } else {
-          ctx.fillStyle = `rgba(101, 196, 129, ${shade})`;
-        }
+        ctx.fillStyle = polygon.tile.isPentagon
+          ? `rgba(136, 183, 78, ${topShade})`
+          : `rgba(112, 199, 106, ${topShade})`;
 
         ctx.fill();
-        ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
+        ctx.strokeStyle = "rgba(32, 54, 33, 0.55)";
         ctx.lineWidth = 1;
         ctx.stroke();
       });
