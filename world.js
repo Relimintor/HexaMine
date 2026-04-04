@@ -501,6 +501,51 @@ function renderStats(tiles, facesCount, settings, subdivisions, topology) {
   topologyStatus.style.color = "#ff8f8f";
 }
 
+function createMiniMapCamera() {
+  const position = vecNormalize([2.4, 1.7, 2.2]);
+  const cameraPosition = vecScale(position, 3.2);
+  const forward = vecScale(vecNormalize(cameraPosition), -1);
+  const worldUp = [0, 1, 0];
+  const right = vecNormalize(vecCross(forward, worldUp));
+  const up = vecNormalize(vecCross(right, forward));
+  return { position: cameraPosition, forward, right, up };
+}
+
+function drawMiniMap(minimapCtx, minimapCanvas, tiles, playerPosition) {
+  minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+  const miniCamera = createMiniMapCamera();
+
+  const polygons = tiles.map((tile) => {
+    const projected = tile.corners
+      .map((corner) => cameraProject(corner, miniCamera, minimapCanvas))
+      .filter(Boolean);
+    if (projected.length < 3) return null;
+    const zAverage = projected.reduce((sum, p) => sum + p.z, 0) / projected.length;
+    return { tile, projected, zAverage };
+  }).filter(Boolean);
+
+  polygons.sort((a, b) => b.zAverage - a.zAverage).forEach((polygon) => {
+    minimapCtx.beginPath();
+    polygon.projected.forEach((point, index) => {
+      if (index === 0) minimapCtx.moveTo(point.x, point.y);
+      else minimapCtx.lineTo(point.x, point.y);
+    });
+    minimapCtx.closePath();
+    minimapCtx.fillStyle = polygon.tile.isPentagon ? "#e6b04b" : "#67aa71";
+    minimapCtx.fill();
+    minimapCtx.strokeStyle = "rgba(0,0,0,0.28)";
+    minimapCtx.stroke();
+  });
+
+  const playerPoint = cameraProject(vecNormalize(playerPosition), miniCamera, minimapCanvas);
+  if (playerPoint) {
+    minimapCtx.beginPath();
+    minimapCtx.arc(playerPoint.x, playerPoint.y, 4, 0, Math.PI * 2);
+    minimapCtx.fillStyle = "#ff4444";
+    minimapCtx.fill();
+  }
+}
+
 function bootWorld() {
   const settings = parseSettings();
   const subdivisions = subdivisionFromSize(settings.size);
@@ -517,9 +562,23 @@ function bootWorld() {
   const canvas = document.getElementById("world-canvas");
   const ctx = canvas.getContext("2d");
   const hud = document.getElementById("hud");
+  const minimapCanvas = document.getElementById("minimap-canvas");
+  const minimapCtx = minimapCanvas.getContext("2d");
+  const hotbar = document.getElementById("hotbar");
+
+  function renderHotbar(activeSlot) {
+    hotbar.innerHTML = "";
+    for (let slot = 1; slot <= 9; slot += 1) {
+      const slotEl = document.createElement("div");
+      slotEl.className = `hotbar-slot${activeSlot === slot ? " active" : ""}`;
+      slotEl.textContent = slot;
+      hotbar.appendChild(slotEl);
+    }
+  }
 
   const state = {
     keys: { w: false, a: false, s: false, d: false, space: false },
+    selectedSlot: 1,
     yaw: 0,
     pitch: 0,
     player: {
@@ -528,6 +587,7 @@ function bootWorld() {
       onGround: false,
     },
   };
+  renderHotbar(state.selectedSlot);
 
   const settingsPhysics = {
     planetRadius: 1,
@@ -550,6 +610,10 @@ function bootWorld() {
     if (event.code === "Space") {
       state.keys.space = true;
       event.preventDefault();
+    }
+    if (/^Digit[1-9]$/.test(event.code)) {
+      state.selectedSlot = Number(event.code.replace("Digit", ""));
+      renderHotbar(state.selectedSlot);
     }
   });
 
@@ -691,6 +755,8 @@ function bootWorld() {
     ctx.moveTo(canvas.width * 0.5, canvas.height * 0.5 - 7);
     ctx.lineTo(canvas.width * 0.5, canvas.height * 0.5 + 7);
     ctx.stroke();
+
+    drawMiniMap(minimapCtx, minimapCanvas, worldModel.topology.tiles, state.player.position);
 
     requestAnimationFrame(draw);
   }
