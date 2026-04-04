@@ -1,3 +1,33 @@
+function simpleHash(seed) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(31, h) + seed.charCodeAt(i) | 0;
+  }
+  return h;
+}
+
+function seededNoise(x, y, z, seed) {
+  const h = simpleHash(seed);
+  const dot = x * 127.1 + y * 311.7 + z * 74.9 + h;
+  return (Math.sin(dot) * 43758.5453) % 1;
+}
+
+function getElevation(center, seed) {
+  const [x, y, z] = center;
+  const n1 = seededNoise(x, y, z, seed);
+  const n2 = seededNoise(x * 2.1, y * 2.1, z * 2.1, seed + "2");
+  const n3 = seededNoise(x * 4.3, y * 4.3, z * 4.3, seed + "3");
+  return n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+}
+
+function getBiomeColor(elevation, isPentagon) {
+  if (isPentagon) return { top: "#e6b04b", side: "#b8893a" };
+  if (elevation < 0.25) return { top: "#3a7bd5", side: "#2a5ba5" };
+  if (elevation < 0.35) return { top: "#d1be72", side: "#9a8c53" };
+  if (elevation < 0.65) return { top: "#6dc76d", side: "#6a4a2d" };
+  if (elevation < 0.80) return { top: "#8f9399", side: "#63666b" };
+  return { top: "#e8e8e8", side: "#b0b0b0" };
+}
 function vecAdd(a, b) {
   return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
@@ -948,6 +978,13 @@ function bootWorld() {
   const baseMesh = buildIcosahedron();
   const mesh = subdivideMesh(baseMesh, subdivisions);
   const tiles = buildDualTiles(mesh, 1);
+  const worldSeed = settings.seed === "random"
+  ? Math.random().toString(36).slice(2)
+  : settings.seed;
+
+tiles.forEach((tile) => {
+  tile.elevation = getElevation(tile.center, worldSeed);
+});
   const worldModel = buildWorldModel(mesh, tiles);
   const tileById = buildTileLookup(worldModel.topology.tiles);
   const topology = validateTopology(mesh, tiles);
@@ -1359,14 +1396,15 @@ function bootWorld() {
         });
         ctx.closePath();
 
-        ctx.fillStyle = polygon.tile.isPentagon
-          ? `rgb(${Math.round(136 * topShade)}, ${Math.round(183 * topShade)}, ${Math.round(78 * topShade)})`
-          : `rgb(${Math.round(112 * topShade)}, ${Math.round(199 * topShade)}, ${Math.round(106 * topShade)})`;
+        const biome = getBiomeColor(polygon.tile.elevation, polygon.tile.isPentagon);
+        ctx.fillStyle = biome.top;
+        ctx.globalAlpha = topShade;
 
         ctx.fill();
         ctx.strokeStyle = "rgba(32, 54, 33, 0.55)";
         ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.globalalpha = 1.0;
       });
 
     ctx.strokeStyle = "#ffffff";
