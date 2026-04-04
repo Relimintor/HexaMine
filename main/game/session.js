@@ -734,14 +734,11 @@ export function createGameSession() {
         y: cell.normal.y * PLANET_OUTER_RADIUS - camera.position.y,
         z: cell.normal.z * PLANET_OUTER_RADIUS - camera.position.z,
       };
-      const depth = dot(toCell, camera.forward);
-      if (depth <= 0.03) continue;
-      const globeVisibilityCutoff = cameraDetached || cameraZoom > 0.7 ? -1 : -0.04;
-      if (dot(cell.normal, playerNormal) < globeVisibilityCutoff) continue;
-      drawQueue.push({ cell, depth });
+      const distanceSq = toCell.x * toCell.x + toCell.y * toCell.y + toCell.z * toCell.z;
+      drawQueue.push({ cell, distanceSq });
     }
 
-    drawQueue.sort((a, b) => b.depth - a.depth);
+    drawQueue.sort((a, b) => b.distanceSq - a.distanceSq);
     for (const entry of drawQueue) {
       drawBlockTile(entry.cell, camera, sunVector);
     }
