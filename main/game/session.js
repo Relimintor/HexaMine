@@ -164,6 +164,8 @@ function projectPoint(point, camera, width, height, focal) {
 
 export function createGameSession() {
   const PLAYER_HEIGHT_IN_HEXES = 2;
+  const PLANET_OUTER_RADIUS = 1;
+  const PLANET_INNER_AIR_RADIUS = 0.7;
   const sessionRoot = document.querySelector("#game-session");
   const canvas = document.querySelector("#game-canvas");
   const infoNode = document.querySelector("#game-info");
@@ -227,8 +229,8 @@ export function createGameSession() {
     player.latitude = clamp(player.latitude, -1.3, 1.3);
 
     if (world.mode === "creative") {
-      if (jumpOrUp) player.radialOffset = clamp(player.radialOffset + 0.02, 0, 1.2);
-      if (down) player.radialOffset = clamp(player.radialOffset - 0.02, 0, 1.2);
+      if (jumpOrUp) player.radialOffset = clamp(player.radialOffset + 0.02, -0.22, 1.2);
+      if (down) player.radialOffset = clamp(player.radialOffset - 0.02, -0.22, 1.2);
       player.jumpVelocity = 0;
     } else {
       if (jumpOrUp && player.radialOffset <= 0.001) {
@@ -273,24 +275,21 @@ export function createGameSession() {
     const h = canvas.height;
     const focal = Math.min(w, h) * 0.82;
 
-    const radius = 1;
-    const baseCenter = {
-      x: cell.normal.x * radius,
-      y: cell.normal.y * radius,
-      z: cell.normal.z * radius,
+    const topCenter = {
+      x: cell.normal.x * (PLANET_OUTER_RADIUS + cell.tileHeight),
+      y: cell.normal.y * (PLANET_OUTER_RADIUS + cell.tileHeight),
+      z: cell.normal.z * (PLANET_OUTER_RADIUS + cell.tileHeight),
+    };
+    const bottomCenter = {
+      x: cell.normal.x * PLANET_INNER_AIR_RADIUS,
+      y: cell.normal.y * PLANET_INNER_AIR_RADIUS,
+      z: cell.normal.z * PLANET_INNER_AIR_RADIUS,
     };
 
     const east = normalize(cross({ x: 0, y: 1, z: 0 }, cell.normal));
     const north = normalize(cross(cell.normal, east));
     const sideCount = cell.isPentagon ? 5 : 6;
     const tileRadius = cell.tileRadius;
-    const heightOffset = cell.tileHeight;
-
-    const topCenter = {
-      x: baseCenter.x + cell.normal.x * heightOffset,
-      y: baseCenter.y + cell.normal.y * heightOffset,
-      z: baseCenter.z + cell.normal.z * heightOffset,
-    };
 
     const topPoints = [];
     const bottomPoints = [];
@@ -310,9 +309,9 @@ export function createGameSession() {
       });
 
       bottomPoints.push({
-        x: baseCenter.x + ringOffset.x * 0.96,
-        y: baseCenter.y + ringOffset.y * 0.96,
-        z: baseCenter.z + ringOffset.z * 0.96,
+        x: bottomCenter.x + ringOffset.x * 0.9,
+        y: bottomCenter.y + ringOffset.y * 0.9,
+        z: bottomCenter.z + ringOffset.z * 0.9,
       });
     }
 
@@ -324,7 +323,7 @@ export function createGameSession() {
     const sideTint = cell.isPentagon ? [142, 112, 76] : [124, 96, 68];
     const topTint = cell.isPentagon ? [84, 188, 96] : [74, 176, 86];
 
-    const shadowCenter = projectPoint(baseCenter, camera, w, h, focal);
+    const shadowCenter = projectPoint(topCenter, camera, w, h, focal);
     if (shadowCenter) {
       const shadowSize = Math.max(4, 90 / (shadowCenter.z + 0.6));
       const shadowOffsetX = 5;
@@ -413,9 +412,9 @@ export function createGameSession() {
     const viewDistance = eyeHeight + cameraZoom + detachedBoost;
     const camera = {
       position: {
-        x: playerNormal.x * (1 + viewDistance),
-        y: playerNormal.y * (1 + viewDistance),
-        z: playerNormal.z * (1 + viewDistance),
+        x: playerNormal.x * (PLANET_OUTER_RADIUS + viewDistance),
+        y: playerNormal.y * (PLANET_OUTER_RADIUS + viewDistance),
+        z: playerNormal.z * (PLANET_OUTER_RADIUS + viewDistance),
       },
       forward: cameraForward,
       right: cameraRight,
@@ -425,9 +424,9 @@ export function createGameSession() {
     const drawQueue = [];
     for (const cell of planetCells) {
       const toCell = {
-        x: cell.normal.x - camera.position.x,
-        y: cell.normal.y - camera.position.y,
-        z: cell.normal.z - camera.position.z,
+        x: cell.normal.x * PLANET_OUTER_RADIUS - camera.position.x,
+        y: cell.normal.y * PLANET_OUTER_RADIUS - camera.position.y,
+        z: cell.normal.z * PLANET_OUTER_RADIUS - camera.position.z,
       };
       const depth = dot(toCell, camera.forward);
       if (depth <= 0.12) continue;
@@ -452,7 +451,9 @@ export function createGameSession() {
 
     infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | ${cameraDetached ? "Fly-out cam" : "First-person"} | ${
       world.topology.hexagonCells
-    } hex + ${world.topology.pentagonCells} pent | W/S forward-back, A left, D right, Mouse look, P toggle fly-out, ${
+    } hex + ${world.topology.pentagonCells} pent | Hollow core r=${PLANET_INNER_AIR_RADIUS.toFixed(
+      2,
+    )} | W/S forward-back, A left, D right, Mouse look, P toggle fly-out, ${
       world.mode === "creative" ? "Space/Shift fly" : "Space jump"
     }`;
   }
