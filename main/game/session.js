@@ -24,10 +24,10 @@ function rotateX(point, angle) {
   };
 }
 
-function drawHex(ctx, x, y, radius) {
+function drawPolygon(ctx, x, y, radius, sides, rotation = Math.PI / 6) {
   ctx.beginPath();
-  for (let i = 0; i < 6; i += 1) {
-    const angle = (Math.PI / 3) * i + Math.PI / 6;
+  for (let i = 0; i < sides; i += 1) {
+    const angle = ((Math.PI * 2) / sides) * i + rotation;
     const px = x + Math.cos(angle) * radius;
     const py = y + Math.sin(angle) * radius;
     if (i === 0) ctx.moveTo(px, py);
@@ -36,19 +36,90 @@ function drawHex(ctx, x, y, radius) {
   ctx.closePath();
 }
 
-function worldDensityFromSize(size) {
+function normalize(v) {
+  const len = Math.hypot(v.x, v.y, v.z) || 1;
+  return {
+    x: v.x / len,
+    y: v.y / len,
+    z: v.z / len,
+  };
+}
+
+function cross(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
+function dot(a, b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+function cellDensityFromSize(size) {
   switch (size) {
     case "tiny":
-      return 14;
+      return 72;
     case "medium":
-      return 19;
+      return 162;
     case "large":
-      return 26;
+      return 320;
     case "colossal":
-      return 34;
+      return 642;
     default:
-      return 22;
+      return 162;
   }
+}
+
+function buildPlanetCells(topology, size) {
+  const total = Math.max(topology?.totalCells || 0, cellDensityFromSize(size));
+  const pentCount = 12;
+  const pentagonIndices = new Set();
+
+  for (let i = 0; i < pentCount; i += 1) {
+    pentagonIndices.add(Math.floor((i / pentCount) * total));
+  }
+
+  const golden = (1 + Math.sqrt(5)) / 2;
+  const cells = [];
+  for (let i = 0; i < total; i += 1) {
+    const t = (i + 0.5) / total;
+    const y = 1 - 2 * t;
+    const radius = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = 2 * Math.PI * i / golden;
+    cells.push({
+      normal: {
+        x: Math.cos(theta) * radius,
+        y,
+        z: Math.sin(theta) * radius,
+      },
+      isPentagon: pentagonIndices.has(i),
+    });
+  }
+
+  return cells;
+}
+
+function projectPoint(point, camera, width, height, focal) {
+  const rel = {
+    x: point.x - camera.position.x,
+    y: point.y - camera.position.y,
+    z: point.z - camera.position.z,
+  };
+
+  const view = {
+    x: dot(rel, camera.right),
+    y: dot(rel, camera.up),
+    z: dot(rel, camera.forward),
+  };
+
+  if (view.z <= 0.08) return null;
+  return {
+    x: width * 0.5 + (view.x / view.z) * focal,
+    y: height * 0.56 - (view.y / view.z) * focal,
+    z: view.z,
+  };
 }
 
 export function createGameSession() {
@@ -61,6 +132,7 @@ export function createGameSession() {
   let animationFrame;
   let running = false;
   let world;
+  let planetCells = [];
   let sunAngle = 0;
   let lookYaw = 0;
   let lookPitch = 0;
@@ -133,104 +205,207 @@ export function createGameSession() {
 
   function drawSky(width, height, sunX, sunY) {
     const bg = ctx.createLinearGradient(0, 0, 0, height);
-    bg.addColorStop(0, "#0a1021");
-    bg.addColorStop(1, "#1f1a17");
+    bg.addColorStop(0, "#92b8ea");
+    bg.addColorStop(0.55, "#9fc2ef");
+    bg.addColorStop(1, "#d8ecff");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    const sunGlow = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, 120);
-    sunGlow.addColorStop(0, "rgba(255,245,170,0.95)");
-    sunGlow.addColorStop(1, "rgba(255,214,132,0)");
+    const sunGlow = ctx.createRadialGradient(sunX, sunY, 12, sunX, sunY, 220);
+    sunGlow.addColorStop(0, "rgba(255,255,235,0.96)");
+    sunGlow.addColorStop(1, "rgba(255,244,188,0)");
     ctx.fillStyle = sunGlow;
     ctx.beginPath();
     ctx.arc(sunX, sunY, 120, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#fff5ba";
+    ctx.fillStyle = "#fffef0";
     ctx.beginPath();
     ctx.arc(sunX, sunY, 14, 0, Math.PI * 2);
     ctx.fill();
   }
 
+  function drawBlockTile(cell, camera, sunVector) {
+    const w = canvas.width;
+    const h = canvas.height;
+    const focal = Math.min(w, h) * 0.82;
+
+    const radius = 1;
+    const baseCenter = {
+      x: cell.normal.x * radius,
+      y: cell.normal.y * radius,
+      z: cell.normal.z * radius,
+    };
+
+    const east = normalize(cross({ x: 0, y: 1, z: 0 }, cell.normal));
+    const north = normalize(cross(cell.normal, east));
+    const sideCount = cell.isPentagon ? 5 : 6;
+    const tileRadius = cell.isPentagon ? 0.054 : 0.05;
+    const heightOffset = cell.isPentagon ? 0.068 : 0.058;
+
+    const topCenter = {
+      x: baseCenter.x + cell.normal.x * heightOffset,
+      y: baseCenter.y + cell.normal.y * heightOffset,
+      z: baseCenter.z + cell.normal.z * heightOffset,
+    };
+
+    const topPoints = [];
+    const bottomPoints = [];
+
+    for (let i = 0; i < sideCount; i += 1) {
+      const a = ((Math.PI * 2) / sideCount) * i + (cell.isPentagon ? Math.PI / 10 : Math.PI / 6);
+      const ringOffset = {
+        x: east.x * Math.cos(a) * tileRadius + north.x * Math.sin(a) * tileRadius,
+        y: east.y * Math.cos(a) * tileRadius + north.y * Math.sin(a) * tileRadius,
+        z: east.z * Math.cos(a) * tileRadius + north.z * Math.sin(a) * tileRadius,
+      };
+
+      topPoints.push({
+        x: topCenter.x + ringOffset.x,
+        y: topCenter.y + ringOffset.y,
+        z: topCenter.z + ringOffset.z,
+      });
+
+      bottomPoints.push({
+        x: baseCenter.x + ringOffset.x * 0.96,
+        y: baseCenter.y + ringOffset.y * 0.96,
+        z: baseCenter.z + ringOffset.z * 0.96,
+      });
+    }
+
+    const projectedTop = topPoints.map((p) => projectPoint(p, camera, w, h, focal));
+    const projectedBottom = bottomPoints.map((p) => projectPoint(p, camera, w, h, focal));
+    if (projectedTop.some((p) => !p) || projectedBottom.some((p) => !p)) return;
+
+    const brightness = clamp((dot(cell.normal, sunVector) + 1) * 0.5, 0.16, 1);
+    const sideTint = cell.isPentagon ? [152, 124, 88] : [131, 105, 74];
+    const topTint = cell.isPentagon ? [76, 188, 92] : [70, 176, 84];
+
+    const shadowCenter = projectPoint(baseCenter, camera, w, h, focal);
+    if (shadowCenter) {
+      const shadowSize = Math.max(8, 120 / (shadowCenter.z + 0.3));
+      const shadowOffsetX = 12;
+      const shadowOffsetY = 8;
+      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      drawPolygon(ctx, shadowCenter.x + shadowOffsetX, shadowCenter.y + shadowOffsetY, shadowSize, sideCount);
+      ctx.fill();
+    }
+
+    for (let i = 0; i < sideCount; i += 1) {
+      const next = (i + 1) % sideCount;
+      const darken = 0.45 + (i / sideCount) * 0.18;
+      ctx.fillStyle = `rgb(${Math.floor(sideTint[0] * brightness * darken)}, ${Math.floor(sideTint[1] * brightness * darken)}, ${Math.floor(
+        sideTint[2] * brightness * darken,
+      )})`;
+      ctx.beginPath();
+      ctx.moveTo(projectedBottom[i].x, projectedBottom[i].y);
+      ctx.lineTo(projectedBottom[next].x, projectedBottom[next].y);
+      ctx.lineTo(projectedTop[next].x, projectedTop[next].y);
+      ctx.lineTo(projectedTop[i].x, projectedTop[i].y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.fillStyle = `rgb(${Math.floor(topTint[0] * (0.62 + brightness * 0.4))}, ${Math.floor(topTint[1] * (0.62 + brightness * 0.4))}, ${Math.floor(
+      topTint[2] * (0.62 + brightness * 0.4),
+    )})`;
+    ctx.beginPath();
+    ctx.moveTo(projectedTop[0].x, projectedTop[0].y);
+    for (let i = 1; i < sideCount; i += 1) {
+      ctx.lineTo(projectedTop[i].x, projectedTop[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(15,55,18,0.35)";
+    ctx.stroke();
+  }
+
   function drawWorld() {
     const w = canvas.width;
     const h = canvas.height;
-    const cx = w * 0.5;
-    const cy = h * 0.55;
-
-    const planetRadius = Math.min(w, h) * (world.size === "colossal" ? 0.33 : world.size === "tiny" ? 0.22 : 0.28);
+    const horizon = h * 0.58;
     const sunVector = {
       x: Math.cos(sunAngle),
       y: 0.25,
       z: Math.sin(sunAngle),
     };
 
-    const sunX = cx + Math.cos(sunAngle) * planetRadius * 2.2;
-    const sunY = cy - Math.sin(sunAngle) * planetRadius * 1.45 - 170;
+    const sunX = w * 0.5 + Math.cos(sunAngle) * w * 0.25;
+    const sunY = h * 0.12 - Math.sin(sunAngle) * h * 0.05;
     drawSky(w, h, sunX, sunY);
 
-    ctx.save();
+    const groundGradient = ctx.createLinearGradient(0, horizon - h * 0.05, 0, h);
+    groundGradient.addColorStop(0, "rgba(109,204,114,0.9)");
+    groundGradient.addColorStop(1, "rgba(56,168,70,1)");
+    ctx.fillStyle = groundGradient;
     ctx.beginPath();
-    ctx.arc(cx, cy, planetRadius, 0, Math.PI * 2);
-    ctx.clip();
-
-    const density = worldDensityFromSize(world.size);
-    for (let latStep = -density; latStep <= density; latStep += 1) {
-      const lat = (latStep / density) * (Math.PI / 2);
-      const rowCount = Math.max(8, Math.floor(density * Math.cos(lat) * 2.2));
-
-      for (let lonStep = 0; lonStep < rowCount; lonStep += 1) {
-        const lon = (lonStep / rowCount) * Math.PI * 2;
-
-        let p = {
-          x: Math.cos(lat) * Math.cos(lon),
-          y: Math.sin(lat),
-          z: Math.cos(lat) * Math.sin(lon),
-        };
-
-        p = rotateY(p, -(player.longitude + lookYaw));
-        p = rotateX(p, -(player.latitude + lookPitch * 0.55));
-
-        if (p.z < 0) continue;
-
-        const light = clamp(p.x * sunVector.x + p.y * sunVector.y + p.z * sunVector.z, -1, 1);
-        const bright = (light + 1) * 0.5;
-
-        const px = cx + p.x * planetRadius;
-        const py = cy + p.y * planetRadius;
-        const hexRadius = Math.max(1.8, ((planetRadius / density) * 0.35) * (0.4 + p.z));
-
-        const base = world.terrain === "superflat" ? 70 : 90;
-        const shade = Math.floor(base + bright * 90);
-
-        ctx.fillStyle = `rgb(${shade}, ${shade}, ${shade})`;
-        drawHex(ctx, px, py, hexRadius);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(15,15,15,0.42)";
-        ctx.stroke();
-      }
-    }
-
-    ctx.restore();
-
-    ctx.strokeStyle = "rgba(255,255,255,0.28)";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, planetRadius, 0, Math.PI * 2);
-    ctx.stroke();
-
-    const playerDistance = planetRadius + player.radialOffset * 42;
-    const playerX = cx;
-    const playerY = cy - playerDistance;
-
-    ctx.fillStyle = world.mode === "creative" ? "#8ae3ff" : "#ffffff";
-    ctx.beginPath();
-    ctx.arc(playerX, playerY, 8, 0, Math.PI * 2);
+    ctx.rect(0, horizon, w, h - horizon);
     ctx.fill();
 
-    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | W forward / S back / A right / D left | Mouse look | ${
-      world.mode === "creative" ? "Space/Shift fly" : "Space jump"
-    }`;
+    const playerNormal = normalize({
+      x: Math.cos(player.latitude) * Math.sin(player.longitude),
+      y: Math.sin(player.latitude),
+      z: Math.cos(player.latitude) * Math.cos(player.longitude),
+    });
+
+    const worldUp = playerNormal;
+    const east = normalize(cross({ x: 0, y: 1, z: 0 }, worldUp));
+    const north = normalize(cross(worldUp, east));
+
+    let cameraForward = north;
+    cameraForward = rotateY(cameraForward, lookYaw);
+    cameraForward = rotateX(cameraForward, lookPitch * 0.35);
+    cameraForward = normalize({
+      x: cameraForward.x + east.x * Math.sin(lookYaw),
+      y: cameraForward.y + east.y * Math.sin(lookYaw),
+      z: cameraForward.z + east.z * Math.sin(lookYaw),
+    });
+
+    const cameraRight = normalize(cross(cameraForward, worldUp));
+    const cameraUp = normalize(cross(cameraRight, cameraForward));
+
+    const eyeHeight = 0.03 + player.radialOffset * 0.05;
+    const camera = {
+      position: {
+        x: playerNormal.x * (1 + eyeHeight),
+        y: playerNormal.y * (1 + eyeHeight),
+        z: playerNormal.z * (1 + eyeHeight),
+      },
+      forward: cameraForward,
+      right: cameraRight,
+      up: cameraUp,
+    };
+
+    const drawQueue = [];
+    for (const cell of planetCells) {
+      const toCell = {
+        x: cell.normal.x - camera.position.x,
+        y: cell.normal.y - camera.position.y,
+        z: cell.normal.z - camera.position.z,
+      };
+      const depth = dot(toCell, camera.forward);
+      if (depth <= 0.12) continue;
+      if (dot(cell.normal, playerNormal) < 0.1) continue;
+      drawQueue.push({ cell, depth });
+    }
+
+    drawQueue.sort((a, b) => b.depth - a.depth);
+    for (const entry of drawQueue) {
+      drawBlockTile(entry.cell, camera, sunVector);
+    }
+
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.5 - 5, h * 0.52);
+    ctx.lineTo(w * 0.5 + 5, h * 0.52);
+    ctx.moveTo(w * 0.5, h * 0.52 - 5);
+    ctx.lineTo(w * 0.5, h * 0.52 + 5);
+    ctx.stroke();
+
+    infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | First-person | ${world.topology.hexagonCells} hex + ${
+      world.topology.pentagonCells
+    } pent | W/S move, A/D strafe, Mouse look, ${world.mode === "creative" ? "Space/Shift fly" : "Space jump"}`;
   }
 
   function tick() {
@@ -276,6 +451,7 @@ export function createGameSession() {
   return {
     start(nextWorld) {
       world = nextWorld;
+      planetCells = buildPlanetCells(world.topology, world.size);
       player.longitude = 0;
       player.latitude = 0;
       player.radialOffset = 0;
