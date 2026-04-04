@@ -223,26 +223,79 @@ function raySphereIntersection(origin, direction, center, radius) {
   return vecAdd(origin, vecScale(dir, t));
 }
 
-function pickTileFromRay(origin, direction, center, radius, tiles, allowedTileIds = null) {
-  const hitPoint = raySphereIntersection(origin, direction, center, radius);
-  if (!hitPoint) {
-    return null;
-  }
-  const hitNormal = vecNormalize(vecSub(hitPoint, center));
-  let bestTile = null;
-  let bestDot = -Infinity;
-  for (let i = 0; i < tiles.length; i += 1) {
-    const tile = tiles[i];
-    if (allowedTileIds && !allowedTileIds.has(tile.id)) {
-      continue;
+function worldToVoxelIndex(position, voxelSize) {
+  return [
+    Math.floor(position[0] / voxelSize),
+    Math.floor(position[1] / voxelSize),
+    Math.floor(position[2] / voxelSize),
+  ];
+}
+
+function voxelKey(i, j, k) {
+  return `${i},${j},${k}`;
+}
+
+function voxelCenterFromIndex(i, j, k, voxelSize) {
+  return [
+    (i + 0.5) * voxelSize,
+    (j + 0.5) * voxelSize,
+    (k + 0.5) * voxelSize,
+  ];
+}
+
+function pseudoNoise3(v) {
+  const n = Math.sin((v[0] * 12.9898) + (v[1] * 78.233) + (v[2] * 37.719)) * 43758.5453;
+  const frac = n - Math.floor(n);
+  return (frac * 2) - 1;
+}
+
+function sampleBaseDensity(position, settingsPhysics) {
+  const rel = vecSub(position, settingsPhysics.planetCenter);
+  const terrain = settingsPhysics.terrainAmplitude
+    * pseudoNoise3(vecScale(rel, settingsPhysics.terrainFrequency));
+  return settingsPhysics.planetRadius - vecLength(rel) + terrain;
+}
+
+function getVoxelDensity(i, j, k, state, settingsPhysics) {
+  const key = voxelKey(i, j, k);
+  const center = voxelCenterFromIndex(i, j, k, settingsPhysics.voxelSize);
+  const baseDensity = sampleBaseDensity(center, settingsPhysics);
+  const modifiedDelta = state.modifiedDensity.get(key) || 0;
+  return baseDensity + modifiedDelta;
+}
+
+function isSolidAtWorld(position, state, settingsPhysics) {
+  const [i, j, k] = worldToVoxelIndex(position, settingsPhysics.voxelSize);
+  return getVoxelDensity(i, j, k, state, settingsPhysics) > 0;
+}
+
+function markDirtyChunkForVoxel(i, j, k, state, settingsPhysics) {
+  const chunkSize = settingsPhysics.chunkSize;
+  const cx = Math.floor(i / chunkSize);
+  const cy = Math.floor(j / chunkSize);
+  const cz = Math.floor(k / chunkSize);
+  state.dirtyChunks.add(voxelKey(cx, cy, cz));
+}
+
+function modifyDensitySphere(center, radius, strengthSign, state, settingsPhysics) {
+  const s = settingsPhysics.voxelSize;
+  const minIndex = worldToVoxelIndex(vecSub(center, [radius, radius, radius]), s);
+  const maxIndex = worldToVoxelIndex(vecAdd(center, [radius, radius, radius]), s);
+
+  for (let i = minIndex[0]; i <= maxIndex[0]; i += 1) {
+    for (let j = minIndex[1]; j <= maxIndex[1]; j += 1) {
+      for (let k = minIndex[2]; k <= maxIndex[2]; k += 1) {
+        const voxelCenter = voxelCenterFromIndex(i, j, k, s);
+        const distance = vecLength(vecSub(voxelCenter, center));
+        if (distance > radius) continue;
+        const falloff = 1 - (distance / radius);
+        const delta = strengthSign * settingsPhysics.editStrength * falloff;
+        const key = voxelKey(i, j, k);
+        state.modifiedDensity.set(key, (state.modifiedDensity.get(key) || 0) + delta);
+        markDirtyChunkForVoxel(i, j, k, state, settingsPhysics);
+      }
     }
-    const alignment = vecDot(tile.normal, hitNormal);
-    if (alignment > bestDot) {
-      bestDot = alignment;
-      bestTile = tile;
-    }
   }
-  return bestTile;
 }
 
 function triangleCircumcenter(a, b, c, radius) {
@@ -755,7 +808,8 @@ function bootWorld() {
       onGround: false,
       rotation: [1, 0, 0, 0],
     },
-    minedTiles: new Set(),
+    modifiedDensity: new Map(),
+    dirtyChunks: new Set(),
   };
   renderHotbar(state.selectedSlot);
 
@@ -765,6 +819,14 @@ function bootWorld() {
     hexHeight: 0.0444444444,
     playerHeightHexes: 1.8,
     groundProbeDistance: 0.12,
+    voxelSize: 0.04,
+    chunkSize: 16,
+    terrainAmplitude: 0.06,
+    terrainFrequency: 3.8,
+    editBrushRadius: 0.08,
+    editStrength: 0.32,
+    placeOffsetScale: 0.5,
+    playerCollisionRadius: 0.06,
     gravity: 3.6,
     moveAccel: 6.2,
     jumpSpeed: 1.2,
@@ -856,41 +918,28 @@ function bootWorld() {
       settingsPhysics.planetCenter,
     );
     const cameraPosition = vecAdd(state.player.position, vecScale(basis.up, 0.02));
-    const tiles = worldModel.topology.tiles;
-    const surfaceRadius = settingsPhysics.planetRadius;
+    const hitPosition = raySphereIntersection(
+      cameraPosition,
+      basis.forward,
+      settingsPhysics.planetCenter,
+      settingsPhysics.planetRadius + settingsPhysics.terrainAmplitude,
+    );
+    if (!hitPosition) return;
+
+    const hitNormal = vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
 
     if (button === 0) {
-      const solidIds = new Set(
-        tiles
-          .filter((tile) => !state.minedTiles.has(tile.id))
-          .map((tile) => tile.id),
-      );
-      const targetTile = pickTileFromRay(
-        cameraPosition,
-        basis.forward,
-        settingsPhysics.planetCenter,
-        surfaceRadius,
-        tiles,
-        solidIds,
-      );
-      if (targetTile) {
-        state.minedTiles.add(targetTile.id);
-      }
+      modifyDensitySphere(hitPosition, settingsPhysics.editBrushRadius, -1, state, settingsPhysics);
     }
 
     if (button === 2) {
-      if (!state.minedTiles.size) return;
-      const targetTile = pickTileFromRay(
-        cameraPosition,
-        basis.forward,
-        settingsPhysics.planetCenter,
-        surfaceRadius,
-        tiles,
-        state.minedTiles,
+      const placePosition = vecAdd(
+        hitPosition,
+        vecScale(hitNormal, settingsPhysics.placeOffsetScale * settingsPhysics.voxelSize),
       );
-      if (targetTile) {
-        state.minedTiles.delete(targetTile.id);
-      }
+      const playerDistance = vecLength(vecSub(placePosition, state.player.position));
+      if (playerDistance <= settingsPhysics.playerCollisionRadius) return;
+      modifyDensitySphere(placePosition, settingsPhysics.editBrushRadius, 1, state, settingsPhysics);
     }
   }
 
@@ -1037,7 +1086,7 @@ function bootWorld() {
     };
 
     const polygons = worldModel.topology.tiles
-      .filter((tile) => !state.minedTiles.has(tile.id))
+      .filter((tile) => isSolidAtWorld(tile.center, state, settingsPhysics))
       .map((tile) => {
       const topCorners = tile.corners;
       const bottomCorners = tile.corners.map((corner) => vecScale(corner, 0.93));
