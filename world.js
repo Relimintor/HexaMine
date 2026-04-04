@@ -1,5 +1,5 @@
 function shadeColor(r, g, b, shade) {
-return `rgb(${Math.round(r * shade)}, ${Math.round(g * shade)}, ${Math.round(b * shade)})`;
+return “rgb(” + Math.round(r * shade) + “, “ + Math.round(g * shade) + “, “ + Math.round(b * shade) + “)”;
 }
 
 function simpleHash(seed) {
