@@ -70,6 +70,29 @@ function cellDensityFromSize(size) {
     default:
       return 162;
   }
+
+  return cells;
+}
+
+function projectPoint(point, camera, width, height, focal) {
+  const rel = {
+    x: point.x - camera.position.x,
+    y: point.y - camera.position.y,
+    z: point.z - camera.position.z,
+  };
+
+  const view = {
+    x: dot(rel, camera.right),
+    y: dot(rel, camera.up),
+    z: dot(rel, camera.forward),
+  };
+
+  if (view.z <= 0.08) return null;
+  return {
+    x: width * 0.5 + (view.x / view.z) * focal,
+    y: height * 0.56 - (view.y / view.z) * focal,
+    z: view.z,
+  };
 }
 
 function tileScaleFromCellCount(totalCells) {
