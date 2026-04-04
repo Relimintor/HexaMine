@@ -370,6 +370,21 @@ function isSolidAtWorld(position, state, settingsPhysics) {
   return getVoxelDensity(i, j, k, state, settingsPhysics) > 0;
 }
 
+function sampleDensityAtWorld(position, state, settingsPhysics) {
+  const [i, j, k] = worldToVoxelIndex(position, settingsPhysics.voxelSize);
+  return getVoxelDensity(i, j, k, state, settingsPhysics);
+}
+
+function densityNormal(position, epsilon, state, settingsPhysics) {
+  const nx = sampleDensityAtWorld([position[0] + epsilon, position[1], position[2]], state, settingsPhysics)
+    - sampleDensityAtWorld([position[0] - epsilon, position[1], position[2]], state, settingsPhysics);
+  const ny = sampleDensityAtWorld([position[0], position[1] + epsilon, position[2]], state, settingsPhysics)
+    - sampleDensityAtWorld([position[0], position[1] - epsilon, position[2]], state, settingsPhysics);
+  const nz = sampleDensityAtWorld([position[0], position[1], position[2] + epsilon], state, settingsPhysics)
+    - sampleDensityAtWorld([position[0], position[1], position[2] - epsilon], state, settingsPhysics);
+  return vecNormalize([nx, ny, nz]);
+}
+
 function markDirtyChunkForVoxel(worldPosition, tiles, tileById, state, settingsPhysics) {
   const mapping = mapWorldToOwnedChunkVoxel(worldPosition, tiles, tileById, settingsPhysics);
   if (!mapping) {
@@ -1003,6 +1018,7 @@ function bootWorld() {
     editBrushRadius: 0.08,
     editStrength: 0.32,
     editReach: 3.5,
+    normalEpsilon: 0.5,
     placeOffsetScale: 0.5,
     playerCollisionRadius: 0.06,
     gravity: 3.6,
@@ -1105,9 +1121,17 @@ function bootWorld() {
     );
     if (!hit) return;
     const hitPosition = hit.position;
-    const hitNormal = vecLength(hit.normal) > 0.0001
-      ? vecNormalize(hit.normal)
-      : vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter));
+    const densityFieldNormal = densityNormal(
+      hitPosition,
+      settingsPhysics.voxelSize * settingsPhysics.normalEpsilon,
+      state,
+      settingsPhysics,
+    );
+    const hitNormal = vecLength(densityFieldNormal) > 0.0001
+      ? densityFieldNormal
+      : (vecLength(hit.normal) > 0.0001
+        ? vecNormalize(hit.normal)
+        : vecNormalize(vecSub(hitPosition, settingsPhysics.planetCenter)));
 
     if (button === 0) {
       const [i, j, k] = hit.voxel;
