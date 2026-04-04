@@ -14,13 +14,18 @@ body {
   color: #fff;
 }
 
-.landing-screen {
+.hidden {
+  display: none !important;
+}
+
+.screen,
+.create-world-screen {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
   display: grid;
   place-items: center;
-  padding: 3rem 1rem 1.5rem;
+  padding: 2rem 1rem 1.5rem;
 }
 
 .space-stars {
@@ -37,9 +42,15 @@ body {
   position: absolute;
   width: min(74vh, 74vw);
   aspect-ratio: 1;
-  top: 7vh;
+  top: 6vh;
   display: grid;
   place-items: center;
+}
+
+.planet-wrapper-shifted {
+  width: min(95vh, 95vw);
+  right: -28vh;
+  top: -8vh;
 }
 
 .planet-glow {
@@ -58,19 +69,12 @@ body {
   background:
     radial-gradient(circle at 28% 30%, #ffffff95 8%, transparent 30%),
     radial-gradient(circle at 78% 70%, #140d07 6%, transparent 32%),
-    conic-gradient(
-      from 120deg,
-      #447e3f,
-      #58984f 20%,
-      #876a3e 35%,
-      #2a251c 50%,
-      #1f1f1f 65%,
-      #1f4e2a 85%,
-      #447e3f
-    );
-  box-shadow:
-    inset -70px 0 90px #020202d9,
-    0 0 100px #67d5ff66;
+    conic-gradient(from 120deg, #447e3f, #58984f 20%, #876a3e 35%, #2a251c 50%, #1f1f1f 65%, #1f4e2a 85%, #447e3f);
+  box-shadow: inset -70px 0 90px #020202d9, 0 0 100px #67d5ff66;
+}
+
+.planet-bright {
+  filter: saturate(1.3) brightness(1.15);
 }
 
 .title {
@@ -116,6 +120,7 @@ footer {
   align-items: end;
   justify-content: space-between;
   z-index: 2;
+  width: calc(100% - 3rem);
 }
 
 .discord-link {
@@ -145,6 +150,134 @@ footer {
   opacity: 0.8;
 }
 
+.create-world-screen {
+  place-items: start;
+  padding-left: 3rem;
+}
+
+.create-panel {
+  position: relative;
+  z-index: 2;
+  margin-top: 1rem;
+  width: min(420px, 100%);
+  background:
+    linear-gradient(120deg, #0f1018f5, #090b13f0),
+    repeating-linear-gradient(60deg, #1f243055 0 34px, transparent 34px 68px);
+  border: 2px solid #31394d;
+  clip-path: polygon(8% 0, 92% 0, 100% 8%, 100% 92%, 92% 100%, 8% 100%, 0 92%, 0 8%);
+  padding: 1rem 1.4rem 1.5rem;
+}
+
+.back-btn {
+  border: 1px solid #686d7a;
+  background: #242934;
+  color: #f4f4f4;
+  font-size: 1.4rem;
+  cursor: pointer;
+  width: 2.2rem;
+  height: 2rem;
+}
+
+.mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin: 0.6rem 0 1rem;
+}
+
+.mode-btn {
+  border: 1px solid #5f6370;
+  background: #8d9098;
+  color: #e9e9e9;
+  font-size: 1.8rem;
+  font-weight: 700;
+  padding: 0.85rem;
+}
+
+.mode-btn.active {
+  color: #f2c261;
+  background: #a4a7ae;
+}
+
+.field-group {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.field-group span {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.field-group input {
+  background: #10141c;
+  border: 2px solid #2f3543;
+  color: #fff;
+  font-size: 1.6rem;
+  padding: 0.7rem;
+  font-family: inherit;
+}
+
+.selector-group {
+  margin: 1.1rem 0;
+}
+
+.selector-group p {
+  margin: 0 0 0.4rem;
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #d0d3da;
+}
+
+.hex-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.hex-chip {
+  border: 2px solid #70788c;
+  background: #141b27;
+  color: #d6d9e2;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.55rem 1.2rem;
+  clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%);
+  cursor: pointer;
+}
+
+.hex-chip.active {
+  background: #f2c261;
+  color: #0d0f14;
+}
+
+.create-btn {
+  margin-top: 1rem;
+  width: 100%;
+  border: 2px solid #787d8a;
+  background: #b6b9c0;
+  color: #edbe5e;
+  font-size: 2.2rem;
+  font-weight: 700;
+  padding: 0.8rem;
+  cursor: pointer;
+}
+
+.spawn-note {
+  min-height: 1.5rem;
+  margin: 0.8rem 0 0;
+  color: #9ce3ff;
+  font-weight: 700;
+}
+
+@media (max-width: 1000px) {
+  .planet-wrapper-shifted {
+    right: -45vh;
+  }
+}
+
 @media (max-width: 900px) {
   .menu {
     margin-top: 14rem;
@@ -154,5 +287,23 @@ footer {
     align-items: center;
     flex-direction: column;
     gap: 0.75rem;
+  }
+
+  .create-world-screen {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .planet-wrapper-shifted {
+    opacity: 0.45;
+    right: -60vh;
+  }
+
+  .field-group span {
+    font-size: 1.55rem;
+  }
+
+  .mode-btn {
+    font-size: 1.35rem;
   }
 }
