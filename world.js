@@ -99,6 +99,10 @@ function vecNormalize(v) {
   return vecScale(v, 1 / length);
 }
 
+function gravityDownVector(position, center) {
+  return vecNormalize(vecSub(center, position));
+}
+
 function triangleCircumcenter(a, b, c, radius) {
   const u = vecSub(b, a);
   const v = vecSub(c, a);
@@ -613,6 +617,7 @@ function bootWorld() {
 
   const settingsPhysics = {
     planetRadius: 1,
+    planetCenter: [0, 0, 0],
     playerHeight: 0.08,
     gravity: 3.6,
     moveAccel: 6.2,
@@ -696,7 +701,9 @@ function bootWorld() {
   });
 
   function updatePlayer(dt) {
-    const up = vecNormalize(state.player.position);
+    const radialFromCenter = vecSub(state.player.position, settingsPhysics.planetCenter);
+    const up = vecNormalize(radialFromCenter);
+    const gravityDown = gravityDownVector(state.player.position, settingsPhysics.planetCenter);
     if (Math.abs(state.turnDelta) > 0.00001) {
       state.moveForward = rotateAroundAxis(state.moveForward, up, state.turnDelta);
       state.turnDelta = 0;
@@ -715,7 +722,10 @@ function bootWorld() {
       state.player.velocity = vecAdd(state.player.velocity, vecScale(move, settingsPhysics.moveAccel * dt));
     }
 
-    state.player.velocity = vecAdd(state.player.velocity, vecScale(up, -settingsPhysics.gravity * dt));
+    state.player.velocity = vecAdd(
+      state.player.velocity,
+      vecScale(gravityDown, settingsPhysics.gravity * dt),
+    );
 
     if (state.keys.space && state.player.onGround) {
       state.player.velocity = vecAdd(state.player.velocity, vecScale(up, settingsPhysics.jumpSpeed));
@@ -730,11 +740,14 @@ function bootWorld() {
     }
     state.player.position = nextPosition;
 
-    const distance = vecLength(state.player.position);
+    const distance = vecLength(vecSub(state.player.position, settingsPhysics.planetCenter));
     const targetDistance = settingsPhysics.planetRadius + settingsPhysics.playerHeight;
     if (distance <= targetDistance) {
-      const correctedUp = vecNormalize(state.player.position);
-      state.player.position = vecScale(correctedUp, targetDistance);
+      const correctedUp = vecNormalize(vecSub(state.player.position, settingsPhysics.planetCenter));
+      state.player.position = vecAdd(
+        settingsPhysics.planetCenter,
+        vecScale(correctedUp, targetDistance),
+      );
       const inwardSpeed = vecDot(state.player.velocity, correctedUp);
       if (inwardSpeed < 0) {
         state.player.velocity = vecSub(state.player.velocity, vecScale(correctedUp, inwardSpeed));
@@ -744,7 +757,7 @@ function bootWorld() {
       state.player.onGround = false;
     }
 
-    const radial = vecNormalize(state.player.position);
+    const radial = vecNormalize(vecSub(state.player.position, settingsPhysics.planetCenter));
     const radialComponent = vecScale(radial, vecDot(state.player.velocity, radial));
     const tangential = vecSub(state.player.velocity, radialComponent);
     state.player.velocity = vecAdd(radialComponent, vecScale(tangential, settingsPhysics.damping));
