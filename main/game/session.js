@@ -651,6 +651,7 @@ export function createGameSession() {
     const sunX = w * 0.5 + Math.cos(sunAngle) * w * 0.25;
     const sunY = h * 0.12 - Math.sin(sunAngle) * h * 0.05;
     drawSky(w, h, sunX, sunY);
+    drawDistantPlanets(w, h);
 
     const groundGradient = ctx.createLinearGradient(0, horizon - h * 0.05, 0, h);
     groundGradient.addColorStop(0, "rgba(136,198,132,0.28)");
