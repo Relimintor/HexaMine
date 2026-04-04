@@ -190,16 +190,44 @@ function subdivisionFromSize(size) {
     case "tiny":
       return 1;
     case "medium":
-      return 2;
+      return 3;
+    case "giant":
+      return 5;
+    case "collosal":
     case "colossal":
-      return 4;
+      return 10;
     case "large":
     default:
       return 3;
   }
 }
 
-function renderStats(tiles, facesCount, settings, subdivisions) {
+function countUniqueEdges(faces) {
+  const edges = new Set();
+  faces.forEach(([a, b, c]) => {
+    const pairs = [[a, b], [b, c], [c, a]];
+    pairs.forEach(([x, y]) => {
+      const key = x < y ? `${x}_${y}` : `${y}_${x}`;
+      edges.add(key);
+    });
+  });
+  return edges.size;
+}
+
+function validateTopology(mesh, tiles) {
+  const euler = mesh.vertices.length - countUniqueEdges(mesh.faces) + mesh.faces.length;
+  const pentagons = tiles.filter((tile) => tile.isPentagon).length;
+  const invalidTiles = tiles.filter((tile) => tile.neighbors.length !== 5 && tile.neighbors.length !== 6).length;
+
+  return {
+    euler,
+    pentagons,
+    invalidTiles,
+    isValid: euler === 2 && pentagons === 12 && invalidTiles === 0,
+  };
+}
+
+function renderStats(tiles, facesCount, settings, subdivisions, topology) {
   const pentagons = tiles.filter((tile) => tile.isPentagon).length;
   const hexagons = tiles.filter((tile) => tile.neighbors.length === 6).length;
 
@@ -218,6 +246,16 @@ function renderStats(tiles, facesCount, settings, subdivisions) {
   document.getElementById("world-stats").innerHTML = stats
     .map((line) => `<li>${line}</li>`)
     .join("");
+
+  const topologyStatus = document.getElementById("topology-status");
+  if (topology.isValid) {
+    topologyStatus.textContent = `Topology OK — Euler: ${topology.euler}, pentagons: ${topology.pentagons}.`;
+    topologyStatus.style.color = "#8ee7a2";
+    return;
+  }
+
+  topologyStatus.textContent = `Topology mismatch — Euler: ${topology.euler}, pentagons: ${topology.pentagons}, invalid tiles: ${topology.invalidTiles}.`;
+  topologyStatus.style.color = "#ff8f8f";
 }
 
 function bootWorld() {
@@ -227,8 +265,9 @@ function bootWorld() {
   const baseMesh = buildIcosahedron();
   const mesh = subdivideMesh(baseMesh, subdivisions);
   const tiles = buildDualTiles(mesh, 1);
+  const topology = validateTopology(mesh, tiles);
 
-  renderStats(tiles, mesh.faces.length, settings, subdivisions);
+  renderStats(tiles, mesh.faces.length, settings, subdivisions, topology);
 
   const canvas = document.getElementById("world-canvas");
   const ctx = canvas.getContext("2d");
