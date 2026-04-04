@@ -205,20 +205,21 @@ export function createGameSession() {
 
   function drawSky(width, height, sunX, sunY) {
     const bg = ctx.createLinearGradient(0, 0, 0, height);
-    bg.addColorStop(0, "#0a1021");
-    bg.addColorStop(1, "#1f1a17");
+    bg.addColorStop(0, "#92b8ea");
+    bg.addColorStop(0.55, "#9fc2ef");
+    bg.addColorStop(1, "#d8ecff");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    const sunGlow = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, 120);
-    sunGlow.addColorStop(0, "rgba(255,245,170,0.95)");
-    sunGlow.addColorStop(1, "rgba(255,214,132,0)");
+    const sunGlow = ctx.createRadialGradient(sunX, sunY, 12, sunX, sunY, 220);
+    sunGlow.addColorStop(0, "rgba(255,255,235,0.96)");
+    sunGlow.addColorStop(1, "rgba(255,244,188,0)");
     ctx.fillStyle = sunGlow;
     ctx.beginPath();
     ctx.arc(sunX, sunY, 120, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = "#fff5ba";
+    ctx.fillStyle = "#fffef0";
     ctx.beginPath();
     ctx.arc(sunX, sunY, 14, 0, Math.PI * 2);
     ctx.fill();
@@ -239,8 +240,8 @@ export function createGameSession() {
     const east = normalize(cross({ x: 0, y: 1, z: 0 }, cell.normal));
     const north = normalize(cross(cell.normal, east));
     const sideCount = cell.isPentagon ? 5 : 6;
-    const tileRadius = cell.isPentagon ? 0.052 : 0.047;
-    const heightOffset = cell.isPentagon ? 0.045 : 0.038;
+    const tileRadius = cell.isPentagon ? 0.054 : 0.05;
+    const heightOffset = cell.isPentagon ? 0.068 : 0.058;
 
     const topCenter = {
       x: baseCenter.x + cell.normal.x * heightOffset,
@@ -277,14 +278,24 @@ export function createGameSession() {
     if (projectedTop.some((p) => !p) || projectedBottom.some((p) => !p)) return;
 
     const brightness = clamp((dot(cell.normal, sunVector) + 1) * 0.5, 0.16, 1);
-    const base = world.terrain === "superflat" ? 68 : 88;
-    const tint = cell.isPentagon ? [132, 160, 202] : [base, base, base];
+    const sideTint = cell.isPentagon ? [152, 124, 88] : [131, 105, 74];
+    const topTint = cell.isPentagon ? [76, 188, 92] : [70, 176, 84];
+
+    const shadowCenter = projectPoint(baseCenter, camera, w, h, focal);
+    if (shadowCenter) {
+      const shadowSize = Math.max(8, 120 / (shadowCenter.z + 0.3));
+      const shadowOffsetX = 12;
+      const shadowOffsetY = 8;
+      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      drawPolygon(ctx, shadowCenter.x + shadowOffsetX, shadowCenter.y + shadowOffsetY, shadowSize, sideCount);
+      ctx.fill();
+    }
 
     for (let i = 0; i < sideCount; i += 1) {
       const next = (i + 1) % sideCount;
       const darken = 0.45 + (i / sideCount) * 0.18;
-      ctx.fillStyle = `rgb(${Math.floor(tint[0] * brightness * darken)}, ${Math.floor(tint[1] * brightness * darken)}, ${Math.floor(
-        tint[2] * brightness * darken,
+      ctx.fillStyle = `rgb(${Math.floor(sideTint[0] * brightness * darken)}, ${Math.floor(sideTint[1] * brightness * darken)}, ${Math.floor(
+        sideTint[2] * brightness * darken,
       )})`;
       ctx.beginPath();
       ctx.moveTo(projectedBottom[i].x, projectedBottom[i].y);
@@ -295,8 +306,8 @@ export function createGameSession() {
       ctx.fill();
     }
 
-    ctx.fillStyle = `rgb(${Math.floor(tint[0] * (0.65 + brightness * 0.45))}, ${Math.floor(tint[1] * (0.65 + brightness * 0.45))}, ${Math.floor(
-      tint[2] * (0.65 + brightness * 0.45),
+    ctx.fillStyle = `rgb(${Math.floor(topTint[0] * (0.62 + brightness * 0.4))}, ${Math.floor(topTint[1] * (0.62 + brightness * 0.4))}, ${Math.floor(
+      topTint[2] * (0.62 + brightness * 0.4),
     )})`;
     ctx.beginPath();
     ctx.moveTo(projectedTop[0].x, projectedTop[0].y);
@@ -305,27 +316,27 @@ export function createGameSession() {
     }
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(16,16,18,0.55)";
+    ctx.strokeStyle = "rgba(15,55,18,0.35)";
     ctx.stroke();
   }
 
   function drawWorld() {
     const w = canvas.width;
     const h = canvas.height;
-    const horizon = h * 0.62;
+    const horizon = h * 0.58;
     const sunVector = {
       x: Math.cos(sunAngle),
       y: 0.25,
       z: Math.sin(sunAngle),
     };
 
-    const sunX = w * 0.5 + Math.cos(sunAngle) * w * 0.38;
-    const sunY = h * 0.15 - Math.sin(sunAngle) * h * 0.09;
+    const sunX = w * 0.5 + Math.cos(sunAngle) * w * 0.25;
+    const sunY = h * 0.12 - Math.sin(sunAngle) * h * 0.05;
     drawSky(w, h, sunX, sunY);
 
-    const groundGradient = ctx.createLinearGradient(0, horizon - h * 0.08, 0, h);
-    groundGradient.addColorStop(0, "rgba(36,32,28,0.25)");
-    groundGradient.addColorStop(1, "rgba(12,10,8,0.86)");
+    const groundGradient = ctx.createLinearGradient(0, horizon - h * 0.05, 0, h);
+    groundGradient.addColorStop(0, "rgba(109,204,114,0.9)");
+    groundGradient.addColorStop(1, "rgba(56,168,70,1)");
     ctx.fillStyle = groundGradient;
     ctx.beginPath();
     ctx.rect(0, horizon, w, h - horizon);
@@ -353,7 +364,7 @@ export function createGameSession() {
     const cameraRight = normalize(cross(cameraForward, worldUp));
     const cameraUp = normalize(cross(cameraRight, cameraForward));
 
-    const eyeHeight = 0.08 + player.radialOffset * 0.06;
+    const eyeHeight = 0.03 + player.radialOffset * 0.05;
     const camera = {
       position: {
         x: playerNormal.x * (1 + eyeHeight),
@@ -374,7 +385,7 @@ export function createGameSession() {
       };
       const depth = dot(toCell, camera.forward);
       if (depth <= 0.12) continue;
-      if (dot(cell.normal, playerNormal) < 0.2) continue;
+      if (dot(cell.normal, playerNormal) < 0.1) continue;
       drawQueue.push({ cell, depth });
     }
 
@@ -383,10 +394,13 @@ export function createGameSession() {
       drawBlockTile(entry.cell, camera, sunVector);
     }
 
-    ctx.strokeStyle = "rgba(255,255,255,0.75)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    drawPolygon(ctx, w * 0.5, h * 0.52, 7, 4, Math.PI / 4);
+    ctx.moveTo(w * 0.5 - 5, h * 0.52);
+    ctx.lineTo(w * 0.5 + 5, h * 0.52);
+    ctx.moveTo(w * 0.5, h * 0.52 - 5);
+    ctx.lineTo(w * 0.5, h * 0.52 + 5);
     ctx.stroke();
 
     infoNode.textContent = `${world.worldName} | ${world.mode.toUpperCase()} | First-person | ${world.topology.hexagonCells} hex + ${
